@@ -40,13 +40,13 @@ export async function POST(req: NextRequest) {
 
   // Rate limits (IP + Device + Email)
   const checks = await Promise.all([
-    rateLimit({ key: `ip:${ip}:login`, limit: 20, windowSeconds: 60 }),
+    rateLimit({ key: `ip:${ip}:login`, limit: 5, windowSeconds: 60 }),
     rateLimit({
       key: `device:${deviceId}:login`,
-      limit: 12,
+      limit: 4,
       windowSeconds: 60,
     }),
-    rateLimit({ key: `email:${emailKey}:login`, limit: 8, windowSeconds: 60 }),
+    rateLimit({ key: `email:${emailKey}:login`, limit: 3, windowSeconds: 60 }),
   ]);
 
   const blocked = checks.find((c) => c.ok === false) as
@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
       ip,
       userAgent,
       deviceId,
+      roles: "customer",
     });
 
     // Always set deviceId cookie (first time or refresh)
@@ -89,6 +90,9 @@ export async function POST(req: NextRequest) {
           mode: "ALLOW",
           riskScore: outcome.riskScore,
           accessToken: outcome.accessToken,
+          roles: outcome.roles,
+          userId: outcome.userId,
+          userName: outcome.userName,
         },
         { status: 200 },
       );

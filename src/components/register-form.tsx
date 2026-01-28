@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useActionState, useEffect } from "react";
+import React, { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import { useRouter } from "next/navigation";
-import { login, type LoginState } from "@/lib/actions";
+import { register, type RegisterState } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,37 +16,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import Link from "next/link";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Signing In..." : "Sign In"}
+      {pending ? "Creating..." : "Create account"}
     </Button>
   );
 }
 
-export function LoginForm() {
-  const router = useRouter();
-  const initialState: LoginState = {};
-  const [state, dispatch] = useActionState(login, initialState);
-
-  useEffect(() => {
-    if (state?.mfaRequired && state?.mfaToken) {
-      router.push(
-        `/mfa?token=${encodeURIComponent(state.mfaToken)}&risk=${state.riskScore ?? ""}`,
-      );
-    }
-  }, [state, router]);
+export function RegisterForm() {
+  const initialState: RegisterState = {};
+  const [state, dispatch] = useActionState(register, initialState);
 
   return (
     <Card className="w-full max-w-sm">
       <form action={dispatch}>
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-headline">Sign In</CardTitle>
-          <CardDescription>
-            Enter your credentials to access your account.
-          </CardDescription>
+          <CardTitle className="text-2xl font-headline">
+            Create Account
+          </CardTitle>
+          <CardDescription>Register to access your account.</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -63,23 +54,37 @@ export function LoginForm() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center">
-              <Label htmlFor="password">Password</Label>
-            </div>
+            <Label htmlFor="password">Password</Label>
             <Input id="password" name="password" type="password" required />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              required
+            />
           </div>
 
           {state?.error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Login Failed</AlertTitle>
+              <AlertTitle>Register Failed</AlertTitle>
               <AlertDescription>{state.error}</AlertDescription>
             </Alert>
           )}
         </CardContent>
 
-        <CardFooter className="flex flex-col gap-4">
+        <CardFooter className="flex flex-col gap-3">
           <SubmitButton />
+          <Link
+            href="/login"
+            className="text-sm text-foreground/70 hover:text-foreground"
+          >
+            Already have an account? Sign in
+          </Link>
         </CardFooter>
       </form>
     </Card>

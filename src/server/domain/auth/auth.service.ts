@@ -30,15 +30,19 @@ export type LoginInput = {
   ip: string;
   userAgent: string;
   deviceId: string;
+  roles?: string;
 };
 
 export type LoginOutcome =
   | {
+      roles: any;
       type: "ALLOW";
       accessToken: string;
       refreshToken: string;
       sessionId: string;
       riskScore: number;
+      userId: string;
+      userName: string;
     }
   | {
       type: "MFA_REQUIRED";
@@ -275,5 +279,8 @@ export async function loginWithPassword(
     refreshToken,
     sessionId,
     riskScore: risk.score,
+    roles: user.roles,
+    userId: String(user._id),
+    userName: user.name || user.email,
   };
 }

@@ -1,125 +1,139 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { users } from './data';
-import { createSession, deleteSession, getSession, updateSession } from './session';
-import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { z } from "zod";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { createSession } from "@/lib/session";
 
 export type LoginState = {
   error?: string;
-  success?: boolean;
+  mfaRequired?: boolean;
+  mfaToken?: string;
+  riskScore?: number;
+  triggeredRules?: string[];
 };
 
 const LoginSchema = z.object({
-  email: z.string().email({ message: 'Please enter a valid email.' }),
-  password: z.string().min(1, { message: 'Password is required.' }),
+  email: z.string().email({ message: "Please enter a valid email." }),
+  password: z.string().min(1, { message: "Password is required." }),
 });
 
-/**
- * A mock fraud and risk engine.
- * In a real-world scenario, this would be a sophisticated service using a rules engine,
- * machine learning models, and various data sources.
- * @param params - Signals for risk evaluation.
- * @returns A risk level.
- */
-function calculateRiskScore(params: {
-  ip: string | null;
-  userAgent: string | null;
-  failedLoginAttempts: number;
-}): 'low' | 'medium' | 'high' {
-  let score = 0;
-  
-  // Rule: High number of failed attempts increases risk
-  score += params.failedLoginAttempts * 20;
-
-  // In a real app, you would check against known malicious IPs or unusual user agents.
-  // For demo purposes, we'll just check for their existence.
-  if (!params.ip) score += 10;
-  if (!params.userAgent) score += 10;
-  
-  if (score > 60) return 'high';
-  if (score > 30) return 'medium';
-  return 'low';
+async function getBaseUrl() {
+  const h = await headers();
+  const host = h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  return `${proto}://${host}`;
 }
 
-export async function login(prevState: LoginState, formData: FormData): Promise<LoginState> {
-  const validatedFields = LoginSchema.safeParse(Object.fromEntries(formData.entries()));
+export async function login(
+  _prevState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const validated = LoginSchema.safeParse(
+    Object.fromEntries(formData.entries()),
+  );
 
-  if (!validatedFields.success) {
-    return {
-      error: validatedFields.error.errors.map((e) => e.message).join(', '),
-    };
-  }
-  const { email, password } = validatedFields.data;
-  const user = users.find((u) => u.email === email);
-
-  // Use generic error messages to avoid revealing user existence
-  if (!user || user.password !== password) {
-    // Note: In a real app, you'd increment a failed attempt counter in the database.
-    return { error: 'Invalid credentials. Please try again.' };
+  if (!validated.success) {
+    return { error: validated.error.errors.map((e) => e.message).join(", ") };
   }
 
-  // --- Fraud & Risk Engine Evaluation ---
-  const headerMap = headers();
-  const riskScore = calculateRiskScore({
-    ip: headerMap.get('x-forwarded-for'),
-    userAgent: headerMap.get('user-agent'),
-    failedLoginAttempts: user.failedLoginAttempts,
+  const baseUrl = await getBaseUrl();
+
+  const res = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(validated.data),
+    cache: "no-store",
   });
 
-  // --- MFA Decision ---
-  if (riskScore === 'medium' || riskScore === 'high') {
-    // Require MFA. Create a pending session.
-    await createSession(user.id, true);
-    redirect('/mfa');
+  const data = await res.json().catch(() => ({}) as any);
+
+  if (!res.ok) {
+    return { error: data?.message ?? "Login failed. Please try again." };
   }
 
-  // Low risk, login successful
-  await createSession(user.id, false);
-  redirect(`/dashboard/${user.role}`);
+  if (data?.mode === "MFA_REQUIRED") {
+    return {
+      mfaRequired: true,
+      mfaToken: data.mfaToken,
+      riskScore: data.riskScore,
+      triggeredRules: data.triggeredRules,
+    };
+  }
+
+  if (data?.mode === "ALLOW") {
+    const role = (data?.roles?.[0] ?? "customer") as string;
+
+    const userId = data.userId;
+    const userName = data.userName;
+
+    await createSession(userId, role, userName, false);
+
+    redirect(`/dashboard/${role}`);
+  }
+
+  return { error: "Unexpected login response." };
 }
 
+export async function logout() {
+  const baseUrl = (async () => {
+    const h = await headers();
+    const host = h.get("host");
+    const proto = h.get("x-forwarded-proto") ?? "http";
+    return `${proto}://${host}`;
+  })();
 
-export type MfaState = {
+  await fetch(`${baseUrl}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => {});
+
+  redirect("/login");
+}
+
+export type RegisterState = {
   error?: string;
 };
 
-const MfaSchema = z.object({
-    mfaMethod: z.enum(['biometric', 'app', 'email']),
-    mfaCode: z.string().optional(),
-});
+const RegisterSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(8, "Password must be at least 8 characters."),
+    confirmPassword: z.string().min(1),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
 
-
-export async function verifyMfa(prevState: MfaState, formData: FormData) {
-  const session = await getSession();
-  if (!session || !session.isMfaPending) {
-    redirect('/login');
-  }
-  
-  const validatedFields = MfaSchema.safeParse(Object.fromEntries(formData.entries()));
-
-  if (!validatedFields.success) {
-    return {
-      error: 'Invalid submission. Please try again.',
-    };
-  }
-
-  const { mfaMethod, mfaCode } = validatedFields.data;
-
-  // Mock verification logic. In a real app, this would involve WebAuthn challenges
-  // or checking a TOTP/OTP code against a user's registered device/email.
-  if (mfaMethod === 'biometric' || (mfaMethod && mfaCode === '123456')) {
-    session.isMfaPending = false;
-    await updateSession(session);
-    redirect(`/dashboard/${session.user.role}`);
+export async function register(
+  _prev: RegisterState,
+  formData: FormData,
+): Promise<RegisterState> {
+  const validated = RegisterSchema.safeParse(
+    Object.fromEntries(formData.entries()),
+  );
+  if (!validated.success) {
+    return { error: validated.error.errors.map((e) => e.message).join(", ") };
   }
 
-  return { error: 'Invalid verification method or code.' };
-}
+  const baseUrl = await getBaseUrl();
+  const res = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      email: validated.data.email,
+      password: validated.data.password,
+    }),
+    cache: "no-store",
+  });
 
+  const data = await res.json().catch(() => ({}) as any);
+  if (!res.ok) return { error: data?.message ?? "Registration failed." };
 
-export async function logout() {
-  await deleteSession();
-  redirect('/login');
+  redirect("/login");
 }
