@@ -36,14 +36,18 @@ export function LoginForm() {
     initialState,
   );
 
+  console.log("==========================+++++++++++++===============", state);
+
   useEffect(() => {
     if (state.status === "mfa") {
-      router.push(
+      router.replace(
         `/mfa?token=${encodeURIComponent(state.mfaToken)}&risk=${state.riskScore}`,
       );
+      router.refresh();
     }
     if (state.status === "success") {
-      router.push(state.redirectTo);
+      router.replace(state.redirectTo);
+      router.refresh();
     }
   }, [state, router]);
 

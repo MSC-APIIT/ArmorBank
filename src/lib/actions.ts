@@ -123,7 +123,10 @@ export async function login(_: any, formData: FormData) {
         ? result.roles[0]
         : "customer";
 
-    await createSession(result.userId, userRole, result.userName, false);
+    await createSession(result.userId, userRole, result.userName, false, {
+      hasPasskey: false,
+      shouldPromptPasskey: true,
+    });
     revalidatePath("/login");
     revalidatePath(`/dashboard/${userRole}`);
 
@@ -148,6 +151,7 @@ export async function logout() {
   await fetch(`${baseUrl}/api/auth/logout`, {
     method: "POST",
     credentials: "include",
+    cache: "no-store",
   }).catch(() => {});
 
   redirect("/login");

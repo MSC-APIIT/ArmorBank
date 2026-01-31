@@ -33,6 +33,7 @@ export async function createSession(
   role: string,
   name: string,
   isMfaPending: boolean = false,
+  options?: { hasPasskey?: boolean; shouldPromptPasskey?: boolean },
 ) {
   const expires = Date.now() + SESSION_DURATION_SECONDS * 1000;
   const sessionPayload: SessionPayload = {
@@ -43,6 +44,8 @@ export async function createSession(
     },
     isMfaPending,
     expires,
+    hasPasskey: options?.hasPasskey ?? false,
+    shouldPromptPasskey: options?.shouldPromptPasskey ?? false,
   };
 
   const encryptedSession = await encrypt(sessionPayload);
@@ -68,7 +71,13 @@ export function isSessionTokenValid(session: SessionPayload): boolean {
 
 export async function deleteSession() {
   const store = await cookies();
-  store.delete(SESSION_COOKIE_NAME);
+  store.set(SESSION_COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    expires: new Date(0),
+    path: "/",
+    sameSite: "lax",
+  });
 }
 
 export async function updateSession(session: SessionPayload) {

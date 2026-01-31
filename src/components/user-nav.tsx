@@ -12,11 +12,11 @@ import {
 import type { SessionPayload } from "@/lib/definitions";
 import Link from "next/link";
 
-export function UserNav({ user }: { user: SessionPayload['user'] }) {
-    const userInitials = user.name
-    .split(' ')
+export function UserNav({ user }: { user: SessionPayload["user"] }) {
+  const userInitials = user.name
+    .split(" ")
     .map((n) => n[0])
-    .join('');
+    .join("");
 
   return (
     <DropdownMenu>
@@ -39,18 +39,14 @@ export function UserNav({ user }: { user: SessionPayload['user'] }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled>
-            Profile
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled>
-            Settings
-          </DropdownMenuItem>
+          <DropdownMenuItem disabled>Profile</DropdownMenuItem>
+          <DropdownMenuItem disabled>Settings</DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/api/logout">Log out</Link>
+          <a href="/api/logout">Log out</a>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

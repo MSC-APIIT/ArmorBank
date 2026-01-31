@@ -8,6 +8,13 @@ declare global {
 
 const uri = env.MONGODB_URI;
 
+async function userHasPasskey(userId: string) {
+  const db = await getDb();
+  const webauthnCreds = db.collection("webauthn_credentials");
+  const count = await webauthnCreds.countDocuments({ userId: userId as any });
+  return count > 0;
+}
+
 function getClientPromise() {
   if (!globalThis.__mongoClientPromise) {
     const client = new MongoClient(uri, {

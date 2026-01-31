@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PasskeyPromptHost } from "./passkey-prompt-host";
 
 export default async function CustomerDashboard() {
   console.log("---------------------------");
@@ -53,6 +54,8 @@ export default async function CustomerDashboard() {
     },
   ];
 
+  console.log("-----------------", session);
+
   return (
     <div className="container mx-auto">
       <h1 className="text-3xl font-bold font-headline mb-6">
@@ -60,6 +63,12 @@ export default async function CustomerDashboard() {
       </h1>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
+          <>
+            <PasskeyPromptHost
+              shouldPrompt={!!session?.shouldPromptPasskey}
+              userId={session?.user?.id}
+            />
+          </>
           <Card>
             <CardHeader>
               <CardTitle>Recent Login Activity</CardTitle>

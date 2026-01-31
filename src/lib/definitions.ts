@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'staff' | 'admin';
+export type UserRole = "customer" | "staff" | "admin";
 
 export type User = {
   id: string;
@@ -6,7 +6,7 @@ export type User = {
   name: string;
   // In a real app, this would be a securely hashed password.
   // For this demo, we'll store it as plain text to compare against.
-  password: string; 
+  password: string;
   role: UserRole;
   // A mock for failed login attempts to feed the risk engine
   failedLoginAttempts: number;
@@ -18,7 +18,8 @@ export type SessionPayload = {
     role: UserRole;
     name: string;
   };
+  expires: number;
   isMfaPending: boolean;
-  // We'll use a simple UNIX timestamp for expiration
-  expires: number; 
+  hasPasskey: boolean;
+  shouldPromptPasskey: boolean;
 };
