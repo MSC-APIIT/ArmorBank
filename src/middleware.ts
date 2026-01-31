@@ -18,7 +18,8 @@ function isSessionTokenValid(session: SessionPayload): boolean {
 }
 
 const PROTECTED_ROUTES = ["/dashboard"];
-const AUTH_ROUTES = ["/login", "/mfa", "/access-denied"];
+const AUTH_ROUTES = ["/login", "/access-denied"];
+const MFA_ROUTE = "/mfa";
 
 export default async function middleware(request: NextRequest) {
   // Skip middleware for Server Actions
@@ -28,6 +29,17 @@ export default async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
+
+  // Allow /mfa without a session (MFA token in URL is enough)
+  if (pathname.startsWith("/mfa")) {
+    const token = request.nextUrl.searchParams.get("token");
+    if (!token) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
 
   // Skip middleware for internal Next.js paths
   if (pathname.startsWith("/_next") || pathname.startsWith("/api")) {

@@ -76,7 +76,12 @@ export async function loginWithPassword(
 
   // Track device
   const device = await devices.findOne<any>({ deviceId: input.deviceId });
+
   const isNewDevice = !device;
+
+  // compute isNewIp BEFORE updating lastSeenIp
+  const isNewIp = !device || device.lastSeenIp !== input.ip;
+
   if (!device) {
     await devices.insertOne({
       deviceId: input.deviceId,
@@ -114,6 +119,7 @@ export async function loginWithPassword(
     ip: input.ip,
     deviceId: input.deviceId,
     isNewDevice,
+    isNewIp,
     deviceTrust: device?.trustLevel ?? "unknown",
     recentFailures,
     geoChanged,

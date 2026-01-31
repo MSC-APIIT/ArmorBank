@@ -32,6 +32,7 @@ async function getBaseUrl() {
   return `${proto}://${host}`;
 }
 
+// login action
 export async function login(_: any, formData: FormData) {
   const h = await headers();
 
@@ -140,6 +141,7 @@ export async function login(_: any, formData: FormData) {
   }
 }
 
+//logout action
 export async function logout() {
   const baseUrl = await getBaseUrl();
 
@@ -166,6 +168,7 @@ const RegisterSchema = z
     path: ["confirmPassword"],
   });
 
+// register action
 export async function register(
   _prev: RegisterState,
   formData: FormData,
@@ -193,4 +196,58 @@ export async function register(
   if (!res.ok) return { error: data?.message ?? "Registration failed." };
 
   redirect("/login");
+}
+
+// MFA verification action
+export type MfaState = { error?: string };
+
+export async function verifyMfa(
+  prev: MfaState,
+  formData: FormData,
+): Promise<MfaState> {
+  const mfaToken = String(formData.get("mfaToken") ?? "");
+  const method = String(formData.get("mfaMethod") ?? "");
+  const code = String(formData.get("mfaCode") ?? "");
+
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host = h.get("host");
+  const baseUrl = `${proto}://${host}`;
+
+  try {
+    if (method === "email") {
+      // Ensure OTP requested (you can make a separate button too)
+      if (!code) {
+        await fetch(`${baseUrl}/api/mfa/email/request`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mfaToken }),
+          cache: "no-store",
+        });
+        return { error: "OTP sent. Please enter the code." };
+      }
+
+      const res = await fetch(`${baseUrl}/api/mfa/email/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mfaToken, code }),
+        cache: "no-store",
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        return { error: data?.message ?? "OTP verification failed." };
+
+      // client will navigate after success (or you can return redirect instruction)
+      return {};
+    }
+
+    if (method === "app") {
+      return { error: "TOTP not implemented yet (use Email or Biometric)." };
+    }
+
+    return { error: "Use Biometric button for passkey verification." };
+  } catch {
+    return { error: "MFA failed. Try again." };
+  }
 }

@@ -2,6 +2,7 @@ export type RiskContext = {
   ip: string;
   deviceId: string;
   isNewDevice: boolean;
+  isNewIp: boolean;
   deviceTrust: "unknown" | "trusted" | "risky" | "blocked";
   recentFailures: number; // last X minutes
   geoChanged: boolean;
@@ -20,12 +21,18 @@ function clamp(n: number) {
 }
 
 export function evaluateLoginRisk(ctx: RiskContext): RiskResult {
+  console.log("==============================", ctx);
   let score = 0;
   const triggeredRules: string[] = [];
 
   if (ctx.isNewDevice) {
     score += 20;
     triggeredRules.push("NEW_DEVICE");
+  }
+
+  if (ctx.isNewIp) {
+    score += 15;
+    triggeredRules.push("NEW_IP");
   }
 
   if (ctx.deviceTrust === "risky") {
