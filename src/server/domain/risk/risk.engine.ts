@@ -21,7 +21,6 @@ function clamp(n: number) {
 }
 
 export function evaluateLoginRisk(ctx: RiskContext): RiskResult {
-  console.log("==============================", ctx);
   let score = 0;
   const triggeredRules: string[] = [];
 
@@ -64,6 +63,5 @@ export function evaluateLoginRisk(ctx: RiskContext): RiskResult {
   let tier: RiskResult["tier"] = "low";
   if (score >= 70) tier = "high";
   else if (score >= 30) tier = "medium";
-
   return { score, tier, triggeredRules };
 }

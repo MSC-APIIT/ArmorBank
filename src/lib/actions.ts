@@ -8,6 +8,7 @@ import { loginWithPassword } from "@/server/domain/auth/auth.service";
 import { rateLimit } from "@/server/security/rateLimit";
 import crypto from "crypto";
 import { revalidatePath } from "next/cache";
+import { getDb } from "@/server/db/mongo";
 
 export type LoginState =
   | { status: "idle" }
@@ -18,6 +19,8 @@ export type LoginState =
       mfaToken: string;
       riskScore: number;
       triggeredRules?: string[];
+      hasPasskey: boolean;
+      preferredMfa: "passkey" | "email";
     };
 
 const LoginSchema = z.object({
@@ -100,14 +103,44 @@ export async function login(_: any, formData: FormData) {
       userAgent,
       roles: "customer",
     });
-    console.log("------1", result);
 
     if (result.type === "MFA_REQUIRED") {
+      const db = await getDb();
+      const mfaChallenges = db.collection("mfa_challenges");
+      const webauthnCreds = db.collection("webauthn_credentials");
+
+      const challenge = await mfaChallenges.findOne<any>({
+        mfaTokenHash: crypto
+          .createHash("sha256")
+          .update(result.mfaToken)
+          .digest("hex"),
+        status: "pending",
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!challenge?.userId) {
+        return {
+          status: "error",
+          error: "MFA session expired. Please login again.",
+        } satisfies LoginState;
+      }
+
+      const passkeyCount = await webauthnCreds.countDocuments({
+        userId: challenge.userId,
+      });
+
+      const hasPasskey = passkeyCount > 0;
+      const preferredMfa: "passkey" | "email" = hasPasskey
+        ? "passkey"
+        : "email";
+
       return {
         status: "mfa",
         mfaToken: result.mfaToken,
         riskScore: result.riskScore,
         triggeredRules: result.triggeredRules,
+        hasPasskey,
+        preferredMfa,
       } satisfies LoginState;
     }
 
@@ -118,14 +151,24 @@ export async function login(_: any, formData: FormData) {
       } satisfies LoginState;
     }
 
+    const db = await getDb();
+    const webauthnCreds = db.collection("webauthn_credentials");
+
+    const passkeyCount = await webauthnCreds.countDocuments({
+      userId: result.userId,
+    });
+
+    const hasPasskey = passkeyCount > 0;
+    const shouldPromptPasskey = !hasPasskey;
+
     const userRole =
       Array.isArray(result.roles) && result.roles.length > 0
         ? result.roles[0]
         : "customer";
 
     await createSession(result.userId, userRole, result.userName, false, {
-      hasPasskey: false,
-      shouldPromptPasskey: true,
+      hasPasskey: hasPasskey,
+      shouldPromptPasskey: shouldPromptPasskey,
     });
     revalidatePath("/login");
     revalidatePath(`/dashboard/${userRole}`);

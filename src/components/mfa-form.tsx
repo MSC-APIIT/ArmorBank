@@ -45,9 +45,12 @@ export function MfaForm() {
   const mfaToken = sp.get("token") ?? "";
   const risk = sp.get("risk") ?? "";
 
+  const preferred = (sp.get("preferred") ?? "email") as "email" | "passkey";
+
   const [selectedMethod, setSelectedMethod] = useState<
     "biometric" | "app" | "email"
-  >("biometric");
+  >(preferred === "passkey" ? "biometric" : "email");
+
   const [bioLoading, setBioLoading] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
   const [bioError, setBioError] = useState<string | null>(null);

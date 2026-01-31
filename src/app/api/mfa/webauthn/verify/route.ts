@@ -27,6 +27,13 @@ function getRpID(host: string) {
   return host.split(":")[0];
 }
 
+function toBuffer(v: any): Buffer {
+  if (Buffer.isBuffer(v)) return v;
+  if (typeof v === "string") return Buffer.from(v, "base64url");
+  if (v?.buffer) return Buffer.from(v.buffer);
+  throw new Error("Invalid buffer field");
+}
+
 function getExpectedOrigin(h: Headers) {
   const proto = h.get("x-forwarded-proto") ?? "http";
   const host = h.get("host") ?? "localhost";
@@ -84,10 +91,22 @@ export async function POST(req: Request) {
   const rpID = getRpID(host);
   const expectedOrigin = getExpectedOrigin(h);
 
-  const credentialId = response.rawId; // base64url
+  const credentialIdBuf = Buffer.from(response.rawId, "base64url");
+  const credentialIdStr = response.rawId;
+
+  const userIdObj = challengeDoc.userId;
+  const userIdStr = String(challengeDoc.userId);
+
   const cred = await webauthnCreds.findOne<any>({
-    userId: challengeDoc.userId,
-    credentialId,
+    $and: [
+      { $or: [{ userId: userIdObj }, { userId: userIdStr }] },
+      {
+        $or: [
+          { credentialId: credentialIdBuf },
+          { credentialId: credentialIdStr },
+        ],
+      },
+    ],
   });
 
   if (!cred) {
@@ -103,8 +122,8 @@ export async function POST(req: Request) {
     expectedOrigin,
     expectedRPID: rpID,
     authenticator: {
-      credentialID: Buffer.from(cred.credentialId, "base64url"),
-      credentialPublicKey: Buffer.from(cred.publicKey, "base64url"),
+      credentialID: toBuffer(cred.credentialId),
+      credentialPublicKey: toBuffer(cred.publicKey),
       counter: cred.counter ?? 0,
     },
     requireUserVerification: true,
