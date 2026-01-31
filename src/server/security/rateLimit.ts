@@ -1,6 +1,8 @@
-import { getDb } from "@/server/db/mongo";
+import { Redis } from "@upstash/redis";
 
-type RateLimitInput = {
+const redis = Redis.fromEnv();
+
+type Input = {
   key: string;
   limit: number;
   windowSeconds: number;
@@ -11,61 +13,29 @@ export async function rateLimit({
   key,
   limit,
   windowSeconds,
-  blockSeconds = 60 * 5,
-}: RateLimitInput): Promise<
-  { ok: true } | { ok: false; retryAfterSeconds: number }
-> {
-  const db = await getDb();
-  const col = db.collection("rate_limits");
+  blockSeconds = 300,
+}: Input): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
+  const lockKey = `${key}:lock`;
 
-  const now = new Date();
-  const windowStart = new Date(now.getTime() - windowSeconds * 1000);
-  const expiresAt = new Date(now.getTime() + windowSeconds * 1000);
+  // 1. Already blocked?
+  const lockTtl = await redis.ttl(lockKey);
 
-  const existing = await col.findOne<{
-    blockedUntil?: Date;
-    count?: number;
-    windowStart?: Date;
-  }>({ key });
-
-  if (existing?.blockedUntil && existing.blockedUntil > now) {
-    return {
-      ok: false,
-      retryAfterSeconds: Math.max(
-        1,
-        Math.ceil((existing.blockedUntil.getTime() - now.getTime()) / 1000),
-      ),
-    };
+  if (lockTtl > 0) {
+    return { ok: false, retryAfterSeconds: lockTtl };
   }
 
-  // Reset window if old
-  const shouldReset =
-    !existing?.windowStart || existing.windowStart < windowStart;
+  // 2. Count attempts (atomic)
+  const count = await redis.incr(key);
 
-  if (shouldReset) {
-    await col.updateOne(
-      { key },
-      {
-        $set: { key, count: 1, windowStart: now, expiresAt },
-        $unset: { blockedUntil: "" },
-      },
-      { upsert: true },
-    );
-    return { ok: true };
+  // 3. First attempt → start window
+  if (count === 1) {
+    await redis.expire(key, windowSeconds);
   }
 
-  // Increment
-  const updated = await col.findOneAndUpdate(
-    { key },
-    { $inc: { count: 1 }, $set: { expiresAt } },
-    { returnDocument: "after", upsert: true },
-  );
-
-  const count = updated?.value?.count ?? 0;
+  // 4. Over limit → block
   if (count > limit) {
-    const blockedUntil = new Date(now.getTime() + blockSeconds * 1000);
-    await col.updateOne({ key }, { $set: { blockedUntil } });
-
+    await redis.set(lockKey, "1", { ex: blockSeconds });
+    await redis.del(key);
     return { ok: false, retryAfterSeconds: blockSeconds };
   }
 

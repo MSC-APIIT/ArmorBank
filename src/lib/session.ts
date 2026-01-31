@@ -67,7 +67,8 @@ export function isSessionTokenValid(session: SessionPayload): boolean {
 }
 
 export async function deleteSession() {
-  (await cookies()).delete(SESSION_COOKIE_NAME);
+  const store = await cookies();
+  store.delete(SESSION_COOKIE_NAME);
 }
 
 export async function updateSession(session: SessionPayload) {

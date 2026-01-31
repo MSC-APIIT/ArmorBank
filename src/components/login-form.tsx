@@ -29,14 +29,21 @@ function SubmitButton() {
 
 export function LoginForm() {
   const router = useRouter();
-  const initialState: LoginState = {};
-  const [state, dispatch] = useActionState(login, initialState);
+  const initialState: LoginState = { status: "idle" };
+
+  const [state, dispatch] = useActionState<LoginState, FormData>(
+    login,
+    initialState,
+  );
 
   useEffect(() => {
-    if (state?.mfaRequired && state?.mfaToken) {
+    if (state.status === "mfa") {
       router.push(
-        `/mfa?token=${encodeURIComponent(state.mfaToken)}&risk=${state.riskScore ?? ""}`,
+        `/mfa?token=${encodeURIComponent(state.mfaToken)}&risk=${state.riskScore}`,
       );
+    }
+    if (state.status === "success") {
+      router.push(state.redirectTo);
     }
   }, [state, router]);
 
@@ -69,7 +76,7 @@ export function LoginForm() {
             <Input id="password" name="password" type="password" required />
           </div>
 
-          {state?.error && (
+          {state.status === "error" && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Login Failed</AlertTitle>

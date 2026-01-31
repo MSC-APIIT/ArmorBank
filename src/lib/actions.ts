@@ -1,17 +1,24 @@
 "use server";
 
 import { z } from "zod";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createSession } from "@/lib/session";
+import { createSession, deleteSession } from "@/lib/session";
+import { loginWithPassword } from "@/server/domain/auth/auth.service";
+import { rateLimit } from "@/server/security/rateLimit";
+import crypto from "crypto";
+import { revalidatePath } from "next/cache";
 
-export type LoginState = {
-  error?: string;
-  mfaRequired?: boolean;
-  mfaToken?: string;
-  riskScore?: number;
-  triggeredRules?: string[];
-};
+export type LoginState =
+  | { status: "idle" }
+  | { status: "error"; error: string; timestamp?: number }
+  | { status: "success"; redirectTo: string }
+  | {
+      status: "mfa";
+      mfaToken: string;
+      riskScore: number;
+      triggeredRules?: string[];
+    };
 
 const LoginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email." }),
@@ -25,66 +32,116 @@ async function getBaseUrl() {
   return `${proto}://${host}`;
 }
 
-export async function login(
-  _prevState: LoginState,
-  formData: FormData,
-): Promise<LoginState> {
-  const validated = LoginSchema.safeParse(
-    Object.fromEntries(formData.entries()),
-  );
+export async function login(_: any, formData: FormData) {
+  const h = await headers();
 
-  if (!validated.success) {
-    return { error: validated.error.errors.map((e) => e.message).join(", ") };
+  const parsed = LoginSchema.safeParse(Object.fromEntries(formData.entries()));
+
+  if (!parsed.success) {
+    return { status: "error", error: "Invalid input" } satisfies LoginState;
   }
 
-  const baseUrl = await getBaseUrl();
-
-  const res = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(validated.data),
-    cache: "no-store",
-  });
-
-  const data = await res.json().catch(() => ({}) as any);
-
-  if (!res.ok) {
-    return { error: data?.message ?? "Login failed. Please try again." };
+  async function getClientIp() {
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   }
 
-  if (data?.mode === "MFA_REQUIRED") {
+  async function getUserAgent() {
+    const h = await headers();
+    return h.get("user-agent") ?? "";
+  }
+
+  async function getOrCreateDeviceId() {
+    const store = await cookies();
+
+    const existing = store.get("deviceId")?.value;
+    if (existing) return existing;
+
+    const id = crypto.randomUUID();
+    store.set("deviceId", id, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    return id;
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const ip = await getClientIp();
+  const deviceId = await getOrCreateDeviceId();
+  const userAgent = await getUserAgent();
+
+  // 🔐 RATE LIMIT (SERVER SIDE)
+  const checks = await Promise.all([
+    rateLimit({ key: `ip:${ip}`, limit: 5, windowSeconds: 60 }),
+    rateLimit({ key: `device:${deviceId}`, limit: 4, windowSeconds: 60 }),
+    rateLimit({ key: `email:${email}`, limit: 3, windowSeconds: 60 }),
+  ]);
+
+  const blocked = checks.find((r) => r.ok === false);
+  if (blocked) {
+    revalidatePath("/login");
     return {
-      mfaRequired: true,
-      mfaToken: data.mfaToken,
-      riskScore: data.riskScore,
-      triggeredRules: data.triggeredRules,
-    };
+      status: "error",
+      error: "Too many attempts. Try again later.",
+      timestamp: Date.now(),
+    } satisfies LoginState;
   }
 
-  if (data?.mode === "ALLOW") {
-    const role = (data?.roles?.[0] ?? "customer") as string;
+  try {
+    const result = await loginWithPassword({
+      email,
+      password: parsed.data.password,
+      ip,
+      deviceId,
+      userAgent,
+      roles: "customer",
+    });
+    console.log("------1", result);
 
-    const userId = data.userId;
-    const userName = data.userName;
+    if (result.type === "MFA_REQUIRED") {
+      return {
+        status: "mfa",
+        mfaToken: result.mfaToken,
+        riskScore: result.riskScore,
+        triggeredRules: result.triggeredRules,
+      } satisfies LoginState;
+    }
 
-    await createSession(userId, role, userName, false);
+    if (result.type === "BLOCKED") {
+      return {
+        status: "error",
+        error: "Login blocked due to security concerns.",
+      } satisfies LoginState;
+    }
 
-    redirect(`/dashboard/${role}`);
+    const userRole =
+      Array.isArray(result.roles) && result.roles.length > 0
+        ? result.roles[0]
+        : "customer";
+
+    await createSession(result.userId, userRole, result.userName, false);
+    revalidatePath("/login");
+    revalidatePath(`/dashboard/${userRole}`);
+
+    return {
+      status: "success",
+      redirectTo: `/dashboard/${userRole}`,
+    } satisfies LoginState;
+  } catch {
+    await deleteSession();
+    revalidatePath("/login");
+    return {
+      status: "error",
+      error: "Invalid email or password",
+    } satisfies LoginState;
   }
-
-  return { error: "Unexpected login response." };
 }
 
 export async function logout() {
-  const baseUrl = (async () => {
-    const h = await headers();
-    const host = h.get("host");
-    const proto = h.get("x-forwarded-proto") ?? "http";
-    return `${proto}://${host}`;
-  })();
+  const baseUrl = await getBaseUrl();
 
   await fetch(`${baseUrl}/api/auth/logout`, {
     method: "POST",

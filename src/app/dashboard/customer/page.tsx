@@ -19,7 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export default async function CustomerDashboard() {
-  console.log("++++++++++++++++++++++++++++++++++++++");
+  console.log("---------------------------");
   const session = await getSession();
 
   const recentLogins = [

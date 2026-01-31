@@ -1,31 +1,63 @@
-import { type NextRequest, NextResponse } from 'next/server';
-import { getSession, isSessionTokenValid } from '@/lib/session';
+import { type NextRequest, NextResponse } from "next/server";
+import type { SessionPayload } from "@/lib/definitions";
 
-const PROTECTED_ROUTES = ['/dashboard'];
-const AUTH_ROUTES = ['/login', '/mfa', '/access-denied'];
+const SESSION_COOKIE_NAME = "autharmor_session";
+
+function decodeSession(cookieValue: string): SessionPayload | null {
+  try {
+    // base64(JSON) In Edge, use atob
+    const json = atob(cookieValue);
+    return JSON.parse(json) as SessionPayload;
+  } catch {
+    return null;
+  }
+}
+
+function isSessionTokenValid(session: SessionPayload): boolean {
+  return session.expires > Date.now();
+}
+
+const PROTECTED_ROUTES = ["/dashboard"];
+const AUTH_ROUTES = ["/login", "/mfa", "/access-denied"];
 
 export default async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const session = await getSession();
+  // Skip middleware for Server Actions
+  const isServerAction = request.headers.get("next-action") !== null;
+  if (isServerAction) {
+    return NextResponse.next();
+  }
 
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
+  const { pathname } = request.nextUrl;
+
+  // Skip middleware for internal Next.js paths
+  if (pathname.startsWith("/_next") || pathname.startsWith("/api")) {
+    return NextResponse.next();
+  }
+
+  const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = cookie ? decodeSession(cookie) : null;
+
+  const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
+    pathname.startsWith(route),
+  );
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
 
   // 1. No session or expired session
   if (!session || !isSessionTokenValid(session)) {
-    // If trying to access a protected route, redirect to login
     if (isProtectedRoute) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
     }
-    // Otherwise, allow access to public/auth pages
     return NextResponse.next();
   }
-  
+
   // 2. Session is valid, but MFA is pending
   if (session.isMfaPending) {
-    // User must complete MFA. Redirect to MFA page if they are anywhere else.
-    if (pathname !== '/mfa') {
-      return NextResponse.redirect(new URL('/mfa', request.url));
+    if (pathname !== "/mfa") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/mfa";
+      return NextResponse.redirect(url);
     }
     return NextResponse.next();
   }
@@ -33,23 +65,23 @@ export default async function middleware(request: NextRequest) {
   // 3. Session is valid and MFA is complete
   const userDashboard = `/dashboard/${session.user.role}`;
 
-  // If on a protected route, verify the role.
   if (isProtectedRoute) {
     if (!pathname.startsWith(userDashboard)) {
-      // User is trying to access a dashboard for a different role. Deny it.
-      return NextResponse.redirect(new URL('/access-denied', request.url));
+      const url = request.nextUrl.clone();
+      url.pathname = "/access-denied";
+      return NextResponse.redirect(url);
     }
   }
 
-  // If trying to access an auth route or the homepage, redirect to their dashboard.
-  if (isAuthRoute || pathname === '/') {
-    return NextResponse.redirect(new URL(userDashboard, request.url));
+  if (isAuthRoute || pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = userDashboard;
+    return NextResponse.redirect(url);
   }
 
-  // 4. For all other cases, allow the request
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ["/((?!api/|_next/|favicon.ico).*)"],
 };
