@@ -261,10 +261,10 @@ export async function verifyMfa(
   const host = h.get("host");
   const baseUrl = `${proto}://${host}`;
 
-  try {
-    if (method === "email") {
-      // Ensure OTP requested (you can make a separate button too)
-      if (!code) {
+  if (method === "email") {
+    // Ensure OTP requested
+    if (!code) {
+      try {
         await fetch(`${baseUrl}/api/mfa/email/request`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -272,29 +272,45 @@ export async function verifyMfa(
           cache: "no-store",
         });
         return { error: "OTP sent. Please enter the code." };
+      } catch {
+        return { error: "Failed to send OTP. Try again." };
       }
+    }
 
+    const store = await cookies();
+    const deviceId = store.get("deviceId")?.value ?? "unknown";
+    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+
+    try {
       const res = await fetch(`${baseUrl}/api/mfa/email/verify`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mfaToken, code }),
+        body: JSON.stringify({ mfaToken, code, deviceId, ip }),
         cache: "no-store",
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok)
+      if (!res.ok) {
         return { error: data?.message ?? "OTP verification failed." };
+      }
 
-      // client will navigate after success (or you can return redirect instruction)
-      return {};
+      revalidatePath(`/dashboard/customer`);
+      if (data.redirectTo) {
+        redirect(data.redirectTo);
+      }
+    } catch (error) {
+      // Re-throw if it's a redirect (Next.js redirects throw)
+      if (error && typeof error === "object" && "digest" in error) {
+        throw error;
+      }
+      // Otherwise it's a real error
+      return { error: "MFA verification failed. Try again." };
     }
-
-    if (method === "app") {
-      return { error: "TOTP not implemented yet (use Email or Biometric)." };
-    }
-
-    return { error: "Use Biometric button for passkey verification." };
-  } catch {
-    return { error: "MFA failed. Try again." };
   }
+
+  if (method === "app") {
+    return { error: "TOTP not implemented yet (use Email or Biometric)." };
+  }
+
+  return { error: "Use Biometric button for passkey verification." };
 }

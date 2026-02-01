@@ -89,6 +89,16 @@ export function LoginForm() {
 
         <CardFooter className="flex flex-col gap-4">
           <SubmitButton />
+          <div className="text-sm text-center text-muted-foreground">
+            Don’t have an account?{" "}
+            <button
+              type="button"
+              onClick={() => router.push("/register")}
+              className="font-medium text-primary hover:underline"
+            >
+              Create one
+            </button>
+          </div>
         </CardFooter>
       </form>
     </Card>

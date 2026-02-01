@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { verifyMfa, type MfaState } from "@/lib/actions";
 
@@ -57,7 +58,7 @@ export function MfaForm() {
   const [hint, setHint] = useState<string | null>(null);
 
   const initialState: MfaState = {};
-  const [state, dispatch] = useFormState(verifyMfa, initialState);
+  const [state, dispatch] = useActionState(verifyMfa, initialState);
 
   const showCodeInput = selectedMethod === "app" || selectedMethod === "email";
 
@@ -163,7 +164,7 @@ export function MfaForm() {
         return;
       }
 
-      setHint("We sent a 6-digit code to your email. Enter it below.");
+      setHint("We sent a 6-digit code to your email. Enter it above.");
     } catch {
       setBioError("Could not send email code. Try again.");
     } finally {

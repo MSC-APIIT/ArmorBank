@@ -10,6 +10,9 @@ const EnvSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().default(900), // 15m
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().default(60 * 60 * 24 * 7), // 7d
 
+  GMAIL_USER: z.string().min(1),
+  GMAIL_APP_PASSWORD: z.string().min(1),
+
   COOKIE_SECURE: z
     .string()
     .optional()

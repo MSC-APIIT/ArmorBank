@@ -85,7 +85,14 @@ export default async function middleware(request: NextRequest) {
     }
   }
 
-  if (isAuthRoute || pathname === "/") {
+  // Don't redirect /mfa - let the server action handle redirect
+  if (isAuthRoute && pathname !== "/mfa") {
+    const url = request.nextUrl.clone();
+    url.pathname = userDashboard;
+    return NextResponse.redirect(url);
+  }
+
+  if (pathname === "/") {
     const url = request.nextUrl.clone();
     url.pathname = userDashboard;
     return NextResponse.redirect(url);

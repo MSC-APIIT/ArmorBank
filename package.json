@@ -51,6 +51,7 @@
     "lucide-react": "^0.475.0",
     "mongodb": "^7.0.0",
     "next": "15.5.9",
+    "nodemailer": "^7.0.13",
     "patch-package": "^8.0.0",
     "pnpm": "^10.28.1",
     "react": "^19.2.1",
