@@ -75,14 +75,39 @@ export async function loginWithPassword(
   const now = new Date();
 
   // Track device
-  const device = await devices.findOne<any>({ deviceId: input.deviceId });
+  const existingDevice = await devices.findOne<any>({
+    deviceId: input.deviceId,
+  });
+  const isNewDevice = !existingDevice;
+  const isNewIp = !existingDevice || existingDevice.lastSeenIp !== input.ip;
 
-  const isNewDevice = !device;
+  // Compute recent failures (update query to be more comprehensive)
+  const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000);
+  const recentFailures = await attempts.countDocuments({
+    $or: [
+      { deviceId: input.deviceId },
+      { ip: input.ip },
+      { emailOrUsername: email },
+    ],
+    createdAt: { $gte: tenMinAgo },
+    result: { $in: ["fail", "blocked"] },
+  });
 
-  // compute isNewIp BEFORE updating lastSeenIp
-  const isNewIp = !device || device.lastSeenIp !== input.ip;
+  const geoChanged = false;
 
-  if (!device) {
+  // Evaluate risk BEFORE device update
+  const risk = evaluateLoginRisk({
+    ip: input.ip,
+    deviceId: input.deviceId,
+    isNewDevice,
+    isNewIp,
+    deviceTrust: existingDevice?.trustLevel ?? "unknown",
+    recentFailures,
+    geoChanged,
+  });
+
+  // update/create device AFTER risk calculation
+  if (!existingDevice) {
     await devices.insertOne({
       deviceId: input.deviceId,
       userId: user?._id ?? null,
@@ -99,31 +124,27 @@ export async function loginWithPassword(
   } else {
     await devices.updateOne(
       { deviceId: input.deviceId },
-      { $set: { lastSeenAt: now, lastSeenIp: input.ip, updatedAt: now } },
+      {
+        $set: {
+          lastSeenAt: now,
+          lastSeenIp: input.ip,
+          updatedAt: now,
+          userId: user?._id ?? existingDevice.userId,
+        },
+      },
     );
   }
 
-  // Compute recent failures (last 10 minutes) as a risk signal
-  const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000);
-  const recentFailures = await attempts.countDocuments({
+  console.log("🔍 Risk Detection:", {
     deviceId: input.deviceId,
     ip: input.ip,
-    createdAt: { $gte: tenMinAgo },
-    result: { $in: ["fail", "blocked"] },
-  });
-
-  // Geo change demo placeholder (keep false for now; later plug real geo lookup)
-  const geoChanged = false;
-
-  const risk = evaluateLoginRisk({
-    ip: input.ip,
-    deviceId: input.deviceId,
     isNewDevice,
     isNewIp,
-    deviceTrust: device?.trustLevel ?? "unknown",
-    recentFailures,
-    geoChanged,
+    lastSeenIp: existingDevice?.lastSeenIp,
+    currentIp: input.ip,
   });
+
+  console.log("🎯 Risk Score:", risk);
 
   // If bad password => record fail and return generic error upstream (caller decides message)
   if (!user || !passwordOk) {
@@ -169,6 +190,7 @@ export async function loginWithPassword(
       riskScore: risk.score,
       triggeredRules: risk.triggeredRules,
     });
+    console.log("🚫 Login BLOCKED - High risk:", risk.score);
     return {
       type: "BLOCKED",
       riskScore: risk.score,
@@ -203,7 +225,7 @@ export async function loginWithPassword(
       riskScore: risk.score,
       triggeredRules: risk.triggeredRules,
     });
-
+    console.log("🔐 MFA REQUIRED - Medium risk:", risk.score);
     return {
       type: "MFA_REQUIRED",
       mfaToken,
@@ -271,6 +293,12 @@ export async function loginWithPassword(
     riskScore: risk.score,
     triggeredRules: risk.triggeredRules,
   });
+
+  await devices.updateOne(
+    { deviceId: input.deviceId },
+    { $set: { trustLevel: "trusted", updatedAt: now } },
+  );
+  console.log("✅ Login ALLOWED - Low risk:", risk.score);
 
   const accessToken = await signAccessToken({
     sub: String(user._id),
