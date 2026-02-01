@@ -172,13 +172,13 @@ export function MfaForm() {
   };
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader className="text-center space-y-2">
-        <CardTitle className="text-2xl font-headline flex items-center justify-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-primary" />
+    <Card className="w-full max-w-md lg:max-w-2xl">
+      <CardHeader className="text-center space-y-3">
+        <CardTitle className="text-2xl lg:text-3xl font-headline flex items-center justify-center gap-2">
+          <ShieldCheck className="h-6 w-6 text-primary" />
           Verify Your Identity
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-base">
           An extra security step is required for this login.
         </CardDescription>
 
@@ -186,11 +186,11 @@ export function MfaForm() {
           <div className="flex justify-center">
             <span
               className={[
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+                "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium",
                 titleMeta.className,
               ].join(" ")}
             >
-              Risk: {titleMeta.label}
+              Risk Level: {titleMeta.label}
               {risk ? <span className="opacity-70">({risk})</span> : null}
             </span>
           </div>
@@ -204,92 +204,124 @@ export function MfaForm() {
 
         <CardContent className="space-y-6">
           {/* Method selector */}
-          <RadioGroup
-            name="mfaMethodSelector"
-            value={selectedMethod}
-            className="grid grid-cols-1 gap-3"
-            onValueChange={(v) => {
-              setSelectedMethod(v as any);
-              setBioError(null);
-              setHint(null);
-            }}
-          >
-            <Label className="flex items-center justify-between rounded-md border p-4 cursor-pointer hover:bg-accent has-[input:checked]:border-primary has-[input:checked]:bg-accent">
-              <span className="flex items-center gap-3">
-                <RadioGroupItem value="biometric" />
-                <Fingerprint className="h-5 w-5" />
-                <span className="font-medium">Use Biometric (Passkey)</span>
-              </span>
-              <span className="text-xs text-muted-foreground">Recommended</span>
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">
+              Choose verification method
             </Label>
+            <RadioGroup
+              name="mfaMethodSelector"
+              value={selectedMethod}
+              className="grid grid-cols-1 md:grid-cols-3 gap-4"
+              onValueChange={(v) => {
+                setSelectedMethod(v as any);
+                setBioError(null);
+                setHint(null);
+              }}
+            >
+              {/* Biometric Option */}
+              <Label className="relative flex flex-col gap-3 rounded-lg border-2 p-5 cursor-pointer hover:bg-accent/50 has-[input:checked]:border-primary has-[input:checked]:bg-accent transition-all group">
+                <div className="flex items-center gap-3">
+                  <RadioGroupItem value="biometric" className="mt-0.5" />
+                  <Fingerprint className="h-6 w-6 text-primary" />
+                </div>
+                <div className="space-y-1 pl-9">
+                  <p className="font-semibold text-sm">Biometric</p>
+                  <p className="text-xs text-muted-foreground">
+                    Passkey or Face ID
+                  </p>
+                </div>
+                <div className="absolute top-3 right-3">
+                  <span className="text-xs font-medium text-primary opacity-0 group-has-[input:checked]:opacity-100 transition-opacity">
+                    ✓ Selected
+                  </span>
+                </div>
+              </Label>
 
-            <Label className="flex items-center justify-between rounded-md border p-4 cursor-pointer hover:bg-accent has-[input:checked]:border-primary has-[input:checked]:bg-accent">
-              <span className="flex items-center gap-3">
-                <RadioGroupItem value="app" />
-                <Smartphone className="h-5 w-5" />
-                <span className="font-medium">Authenticator App</span>
-              </span>
-              <span className="text-xs text-muted-foreground">Coming soon</span>
-            </Label>
+              {/* Authenticator App Option */}
+              <Label className="relative flex flex-col gap-3 rounded-lg border-2 p-5 cursor-not-allowed opacity-60 transition-all">
+                <div className="flex items-center gap-3">
+                  <RadioGroupItem value="app" disabled className="mt-0.5" />
+                  <Smartphone className="h-6 w-6" />
+                </div>
+                <div className="space-y-1 pl-9">
+                  <p className="font-semibold text-sm">Authenticator</p>
+                  <p className="text-xs text-muted-foreground">Coming soon</p>
+                </div>
+              </Label>
 
-            <Label className="flex items-center justify-between rounded-md border p-4 cursor-pointer hover:bg-accent has-[input:checked]:border-primary has-[input:checked]:bg-accent">
-              <span className="flex items-center gap-3">
-                <RadioGroupItem value="email" />
-                <Mail className="h-5 w-5" />
-                <span className="font-medium">Email One-Time Code</span>
-              </span>
-              <span className="text-xs text-muted-foreground">Backup</span>
-            </Label>
-          </RadioGroup>
+              {/* Email Option */}
+              <Label className="relative flex flex-col gap-3 rounded-lg border-2 p-5 cursor-pointer hover:bg-accent/50 has-[input:checked]:border-primary has-[input:checked]:bg-accent transition-all group">
+                <div className="flex items-center gap-3">
+                  <RadioGroupItem value="email" className="mt-0.5" />
+                  <Mail className="h-6 w-6 text-primary" />
+                </div>
+                <div className="space-y-1 pl-9">
+                  <p className="font-semibold text-sm">Email Code</p>
+                  <p className="text-xs text-muted-foreground">
+                    One-time password
+                  </p>
+                </div>
+                <div className="absolute top-3 right-3">
+                  <span className="text-xs font-medium text-primary opacity-0 group-has-[input:checked]:opacity-100 transition-opacity">
+                    ✓ Selected
+                  </span>
+                </div>
+              </Label>
+            </RadioGroup>
+          </div>
 
           {/* Biometric action */}
           {selectedMethod === "biometric" && (
-            <div className="space-y-3">
+            <div className="space-y-4 animate-in fade-in duration-300">
               <Button
                 type="button"
-                className="w-full"
+                className="w-full h-12 text-base"
+                size="lg"
                 onClick={doBiometric}
                 disabled={bioLoading}
               >
                 {bioLoading ? (
                   <>
-                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                    <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
                     Waiting for biometric...
                   </>
                 ) : (
                   <>
-                    <Fingerprint className="mr-2 h-4 w-4" />
+                    <Fingerprint className="mr-2 h-5 w-5" />
                     Continue with Biometric
                   </>
                 )}
               </Button>
 
-              <p className="text-xs text-muted-foreground text-center">
-                You’ll be asked to confirm with your device passkey or
-                biometric.
-              </p>
+              <div className="rounded-lg border bg-muted/40 p-4">
+                <p className="text-sm text-muted-foreground text-center">
+                  You'll be prompted to authenticate using your device's passkey
+                  or biometric sensor.
+                </p>
+              </div>
             </div>
           )}
 
           {/* Code input */}
           {showCodeInput && (
-            <div className="space-y-3 animate-in fade-in duration-300">
+            <div className="space-y-4 animate-in fade-in duration-300">
               {selectedMethod === "email" && (
                 <Button
                   type="button"
                   variant="secondary"
-                  className="w-full"
+                  className="w-full h-12 text-base"
+                  size="lg"
                   onClick={sendEmailCode}
                   disabled={emailSending}
                 >
                   {emailSending ? (
                     <>
-                      <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                      <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
                       Sending code...
                     </>
                   ) : (
                     <>
-                      <Mail className="mr-2 h-4 w-4" />
+                      <Mail className="mr-2 h-5 w-5" />
                       Send Email Code
                     </>
                   )}
@@ -297,13 +329,17 @@ export function MfaForm() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="mfaCode">Verification Code</Label>
+                <Label htmlFor="mfaCode" className="text-sm font-medium">
+                  Verification Code
+                </Label>
                 <Input
                   id="mfaCode"
                   name="mfaCode"
-                  placeholder="123456"
+                  placeholder="000000"
+                  className="h-12 text-center text-lg tracking-widest"
                   inputMode="numeric"
                   autoComplete="one-time-code"
+                  maxLength={6}
                   required={showCodeInput}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -313,9 +349,12 @@ export function MfaForm() {
               </div>
 
               {hint && (
-                <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                  {hint}
-                </div>
+                <Alert className="bg-blue-50 border-blue-200">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-800">
+                    {hint}
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           )}
@@ -329,23 +368,36 @@ export function MfaForm() {
             </Alert>
           )}
 
-          {/* Lightweight info */}
-          <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            Tip: If you lost your device, use{" "}
-            <span className="font-medium">Email One-Time Code</span> and then
-            add a new passkey after you sign in.
+          {/* Help section */}
+          <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+            <p className="text-sm font-medium">Need help?</p>
+            <p className="text-xs text-muted-foreground">
+              If you've lost access to your device, use{" "}
+              <span className="font-medium text-foreground">Email Code</span> to
+              verify your identity. You can add a new passkey after signing in.
+            </p>
           </div>
         </CardContent>
 
-        <CardFooter>
+        <CardFooter className="flex flex-col gap-3">
           {/* Only submit for code-based methods */}
           {showCodeInput ? (
             <VerifyButton disabled={selectedMethod === "app"} />
           ) : (
-            <div className="w-full text-center text-xs text-muted-foreground">
-              Biometric verification does not require a code.
+            <div className="w-full text-center py-2 text-sm text-muted-foreground">
+              Click the button above to verify with biometric authentication.
             </div>
           )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/login")}
+            className="w-full text-muted-foreground hover:text-foreground"
+          >
+            ← Back to login
+          </Button>
         </CardFooter>
       </form>
     </Card>

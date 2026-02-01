@@ -153,6 +153,42 @@ export async function POST(req: Request) {
     { $set: { status: "passed", passedAt: new Date() } },
   );
 
+  // Save/update device AFTER successful passkey MFA
+  const devices = db.collection("devices");
+  const now = new Date();
+  const existingDevice = await devices.findOne({
+    deviceId: challengeDoc.deviceId,
+  });
+
+  if (!existingDevice) {
+    await devices.insertOne({
+      deviceId: challengeDoc.deviceId,
+      userId: challengeDoc.userId,
+      fingerprintHash: sha256(h.get("user-agent") || "unknown"),
+      userAgent: h.get("user-agent") || "unknown",
+      platform: "web",
+      trustLevel: "passkey_verified",
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastSeenIp: challengeDoc.ip,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await devices.updateOne(
+      { deviceId: challengeDoc.deviceId },
+      {
+        $set: {
+          lastSeenAt: now,
+          lastSeenIp: challengeDoc.ip,
+          updatedAt: now,
+          userId: challengeDoc.userId,
+          trustLevel: "passkey_verified",
+        },
+      },
+    );
+  }
+
   // create full session (same style as low-risk)
   const user = await users.findOne<any>({ _id: challengeDoc.userId });
   if (!user)

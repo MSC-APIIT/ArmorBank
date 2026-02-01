@@ -106,35 +106,6 @@ export async function loginWithPassword(
     geoChanged,
   });
 
-  // update/create device AFTER risk calculation
-  if (!existingDevice) {
-    await devices.insertOne({
-      deviceId: input.deviceId,
-      userId: user?._id ?? null,
-      fingerprintHash: sha256(input.userAgent),
-      userAgent: input.userAgent,
-      platform: "web",
-      trustLevel: "unknown",
-      firstSeenAt: now,
-      lastSeenAt: now,
-      lastSeenIp: input.ip,
-      createdAt: now,
-      updatedAt: now,
-    });
-  } else {
-    await devices.updateOne(
-      { deviceId: input.deviceId },
-      {
-        $set: {
-          lastSeenAt: now,
-          lastSeenIp: input.ip,
-          updatedAt: now,
-          userId: user?._id ?? existingDevice.userId,
-        },
-      },
-    );
-  }
-
   console.log("🔍 Risk Detection:", {
     deviceId: input.deviceId,
     ip: input.ip,
@@ -294,10 +265,35 @@ export async function loginWithPassword(
     triggeredRules: risk.triggeredRules,
   });
 
-  await devices.updateOne(
-    { deviceId: input.deviceId },
-    { $set: { trustLevel: "trusted", updatedAt: now } },
-  );
+  // Save/update device ONLY on successful low-risk login
+  if (!existingDevice) {
+    await devices.insertOne({
+      deviceId: input.deviceId,
+      userId: user._id,
+      fingerprintHash: sha256(input.userAgent),
+      userAgent: input.userAgent,
+      platform: "web",
+      trustLevel: "trusted",
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastSeenIp: input.ip,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await devices.updateOne(
+      { deviceId: input.deviceId },
+      {
+        $set: {
+          lastSeenAt: now,
+          lastSeenIp: input.ip,
+          updatedAt: now,
+          userId: user._id,
+          trustLevel: "trusted",
+        },
+      },
+    );
+  }
   console.log("✅ Login ALLOWED - Low risk:", risk.score);
 
   const accessToken = await signAccessToken({
