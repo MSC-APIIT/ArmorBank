@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { PasskeyPromptHost } from "./passkey-prompt-host";
 
 export default async function CustomerDashboard() {
-  console.log("---------------------------");
   const session = await getSession();
 
   const recentLogins = [
@@ -53,8 +52,6 @@ export default async function CustomerDashboard() {
       status: "Failed Attempt",
     },
   ];
-
-  console.log("-----------------", session);
 
   return (
     <div className="container mx-auto">
