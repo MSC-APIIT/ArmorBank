@@ -13,6 +13,8 @@ const EnvSchema = z.object({
   GMAIL_USER: z.string().min(1),
   GMAIL_APP_PASSWORD: z.string().min(1),
 
+  DUMMY_BCRYPT_HASH: z.string().min(60),
+
   COOKIE_SECURE: z
     .string()
     .optional()

@@ -67,9 +67,7 @@ export async function loginWithPassword(
   const user = await users.findOne<any>({ email });
 
   // Prevent enumeration: always do a bcrypt compare
-  const fakeHash =
-    "$2a$10$CwTycUXWue0Thq9StjUM0uJ8O6dL0GQqQXyLkYt5x4jG0i7f7o8mG"; // random
-  const hashToCheck = user?.passwordHash ?? fakeHash;
+  const hashToCheck = user?.passwordHash ?? env.DUMMY_BCRYPT_HASH;
   const passwordOk = await bcrypt.compare(input.password, hashToCheck);
 
   const now = new Date();
