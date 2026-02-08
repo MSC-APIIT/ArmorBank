@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 type StartResp = {
   ok: boolean;
@@ -27,6 +28,25 @@ export default function TotpSetupCard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/mfa/totp/status", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (mounted && res.ok) setEnabled(!!data.enabled);
+      } finally {
+        if (mounted) setChecking(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleStart() {
     setError(null);
@@ -59,6 +79,7 @@ export default function TotpSetupCard() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message ?? "Invalid code");
       setSuccess(true);
+      setEnabled(true);
       setStart(null);
       setCode("");
     } catch (e: any) {
@@ -90,16 +111,28 @@ export default function TotpSetupCard() {
           </Alert>
         )}
 
-        {success && (
+        {(success || enabled) && (
           <Alert>
             <AlertTitle>Enabled</AlertTitle>
             <AlertDescription>
-              Authenticator app MFA is now enabled.
+              Authenticator app MFA is already enabled for your account.
             </AlertDescription>
           </Alert>
         )}
 
-        {!start ? (
+        {checking ? (
+          <p className="text-sm text-muted-foreground">Checking status...</p>
+        ) : enabled ? (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEnabled(true)} disabled>
+              Enabled
+            </Button>
+
+            <Link href="/dashboard/customer">
+              <Button variant="outline">Go Back</Button>
+            </Link>
+          </div>
+        ) : !start ? (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
               Start setup to generate a QR code, then confirm using a 6-digit

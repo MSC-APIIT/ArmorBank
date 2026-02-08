@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getDb } from "@/server/db/mongo";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/types";
+import { getSession, updateSession } from "@/lib/session";
 
 function getRpID(host: string) {
   return host.split(":")[0];
@@ -15,6 +16,13 @@ function getOrigin(h: Headers) {
 }
 
 export async function POST(req: Request) {
+  const session = await getSession();
+  if (session) {
+    session.hasPasskey = true;
+    session.shouldPromptPasskey = false;
+    await updateSession(session);
+  }
+
   const { userId, registrationResponse } = (await req.json()) as {
     userId: string;
     registrationResponse: RegistrationResponseJSON;

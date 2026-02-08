@@ -162,13 +162,21 @@ export async function POST(req: Request) {
       },
     );
 
+    const webauthnCreds = db.collection("webauthn_credentials");
+    const passkeyCount = await webauthnCreds.countDocuments({
+      userId: user._id,
+    });
+
+    const hasPasskey = passkeyCount > 0;
+    const shouldPromptPasskey = !hasPasskey;
+
     // Create session
     await createSession(
       String(user._id),
       userRole,
       user.name || user.email,
       false,
-      { hasPasskey: false, shouldPromptPasskey: false },
+      { hasPasskey, shouldPromptPasskey },
     );
     return NextResponse.json({
       ok: true,

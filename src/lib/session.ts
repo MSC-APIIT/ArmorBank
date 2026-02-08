@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { SessionPayload, UserRole } from "./definitions";
 
 const SESSION_COOKIE_NAME = "autharmor_session";
-const SESSION_DURATION_SECONDS = 5 * 60; // 5 minutes
+const SESSION_DURATION_SECONDS = 15 * 60; // 15 minutes
 
 async function encrypt(payload: SessionPayload): Promise<string> {
   const payloadString = JSON.stringify(payload);

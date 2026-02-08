@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PasskeyPromptHost } from "./passkey-prompt-host";
+import PasskeySection from "@/components/passkey-section";
 import Link from "next/link";
 
 export default async function CustomerDashboard() {
@@ -61,12 +61,6 @@ export default async function CustomerDashboard() {
       </h1>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <>
-            <PasskeyPromptHost
-              shouldPrompt={!!session?.shouldPromptPasskey}
-              userId={session?.user?.id}
-            />
-          </>
           <Card>
             <CardHeader>
               <CardTitle>Recent Login Activity</CardTitle>
@@ -132,9 +126,6 @@ export default async function CustomerDashboard() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <Button className="w-full">Manage Security Settings</Button>
-            </CardContent>
           </Card>
           <Card>
             <CardHeader>
@@ -158,6 +149,13 @@ export default async function CustomerDashboard() {
               </div>
             </CardContent>
           </Card>
+          <>
+            <PasskeySection
+              userId={session?.user?.id}
+              shouldPrompt={!!session?.shouldPromptPasskey}
+              hasPasskey={!!session?.hasPasskey}
+            />
+          </>
         </div>
       </div>
     </div>
