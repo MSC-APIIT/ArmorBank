@@ -77,7 +77,7 @@ export async function login(_: any, formData: FormData) {
   const deviceId = await getOrCreateDeviceId();
   const userAgent = await getUserAgent();
 
-  // 🔐 RATE LIMIT (SERVER SIDE)
+  // RATE LIMIT (SERVER SIDE)
   const checks = await Promise.all([
     rateLimit({ key: `ip:${ip}`, limit: 5, windowSeconds: 60 }),
     rateLimit({ key: `device:${deviceId}`, limit: 4, windowSeconds: 60 }),
@@ -309,7 +309,33 @@ export async function verifyMfa(
   }
 
   if (method === "app") {
-    return { error: "TOTP not implemented yet (use Email or Biometric)." };
+    if (!code) {
+      return { error: "Enter the 6-digit code from your Authenticator app." };
+    }
+
+    const store = await cookies();
+    const deviceId = store.get("deviceId")?.value ?? "unknown";
+    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+
+    try {
+      const res = await fetch(`${baseUrl}/api/mfa/totp/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mfaToken, code, deviceId, ip }),
+        cache: "no-store",
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { error: data?.message ?? "Authenticator verification failed." };
+      }
+
+      revalidatePath(`/dashboard/customer`);
+      if (data.redirectTo) redirect(data.redirectTo);
+    } catch (error) {
+      if (error && typeof error === "object" && "digest" in error) throw error;
+      return { error: "Authenticator verification failed. Try again." };
+    }
   }
 
   return { error: "Use Biometric button for passkey verification." };

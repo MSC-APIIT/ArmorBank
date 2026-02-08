@@ -54,11 +54,13 @@
     "nodemailer": "^7.0.13",
     "patch-package": "^8.0.0",
     "pnpm": "^10.28.1",
+    "qrcode": "^1.5.4",
     "react": "^19.2.1",
     "react-day-picker": "^9.11.3",
     "react-dom": "^19.2.1",
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
+    "speakeasy": "^2.0.0",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.25.76"
@@ -66,6 +68,7 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/nodemailer": "^7.0.9",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
     "eslint": "9.39.2",

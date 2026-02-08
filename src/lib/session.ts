@@ -2,9 +2,6 @@ import "server-only";
 import { cookies } from "next/headers";
 import type { SessionPayload, UserRole } from "./definitions";
 
-const SECRET_KEY =
-  process.env.SESSION_SECRET ||
-  "a-very-secret-and-secure-key-for-demonstration";
 const SESSION_COOKIE_NAME = "autharmor_session";
 const SESSION_DURATION_SECONDS = 5 * 60; // 5 minutes
 
@@ -27,7 +24,7 @@ async function decrypt(
   }
 }
 
-// UPDATED: Accept user data directly instead of looking it up
+// Accept user data directly instead of looking it up
 export async function createSession(
   userId: string,
   role: string,

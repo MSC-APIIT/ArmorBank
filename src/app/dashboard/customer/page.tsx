@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PasskeyPromptHost } from "./passkey-prompt-host";
+import Link from "next/link";
 
 export default async function CustomerDashboard() {
   const session = await getSession();
@@ -145,12 +146,15 @@ export default async function CustomerDashboard() {
             <CardContent>
               <div className="flex items-center justify-between p-3 bg-secondary rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Smartphone />
+                  <Smartphone className="h-4 w-4" />
                   <span className="font-medium">Primary Authenticator</span>
                 </div>
-                <Button variant="outline" size="sm">
-                  Manage
-                </Button>
+
+                <Link href="/dashboard/customer/security">
+                  <Button variant="outline" size="sm">
+                    Manage
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>

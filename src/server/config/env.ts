@@ -20,6 +20,9 @@ const EnvSchema = z.object({
     .optional()
     .transform((v) => v !== "false")
     .default("true"),
+
+  TOTP_ISSUER: z.string().min(1).default("Bank-Auth AuthArmor"),
+  MFA_ENC_KEY: z.string().min(32),
 });
 
 export const env = EnvSchema.parse(process.env);
