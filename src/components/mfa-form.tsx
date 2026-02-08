@@ -2,10 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { verifyMfa, type MfaState } from "@/lib/actions";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -30,11 +27,16 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
-function VerifyButton({ disabled }: { disabled?: boolean }) {
-  const { pending } = useFormStatus();
+function VerifyButton({
+  disabled,
+  loading,
+}: {
+  disabled?: boolean;
+  loading?: boolean;
+}) {
   return (
-    <Button type="submit" className="w-full" disabled={disabled || pending}>
-      {pending ? "Verifying..." : "Verify"}
+    <Button type="submit" className="w-full" disabled={disabled || loading}>
+      {loading ? "Verifying..." : "Verify"}
     </Button>
   );
 }
@@ -54,11 +56,12 @@ export function MfaForm() {
 
   const [bioLoading, setBioLoading] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+
   const [bioError, setBioError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
-  const initialState: MfaState = {};
-  const [state, dispatch] = useActionState(verifyMfa, initialState);
+  const [otpCode, setOtpCode] = useState("");
 
   const showCodeInput = selectedMethod === "app" || selectedMethod === "email";
 
@@ -97,6 +100,8 @@ export function MfaForm() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mfaToken }),
+        cache: "no-store",
+        credentials: "include",
       });
 
       const optData = await optRes.json().catch(() => ({}));
@@ -123,6 +128,8 @@ export function MfaForm() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mfaToken, response: authResp }),
+        cache: "no-store",
+        credentials: "include",
       });
 
       const verifyData = await verifyRes.json().catch(() => ({}));
@@ -132,7 +139,8 @@ export function MfaForm() {
         return;
       }
 
-      router.push(verifyData.redirectTo ?? "/dashboard");
+      router.replace(verifyData.redirectTo ?? "/dashboard");
+      router.refresh();
     } catch (e: any) {
       setBioError(e?.message ?? "Biometric failed. Try Email Code.");
     } finally {
@@ -156,6 +164,8 @@ export function MfaForm() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mfaToken }),
+        cache: "no-store",
+        credentials: "include",
       });
 
       const data = await res.json().catch(() => ({}));
@@ -169,6 +179,56 @@ export function MfaForm() {
       setBioError("Could not send email code. Try again.");
     } finally {
       setEmailSending(false);
+    }
+  };
+
+  const verifyEmailCode = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    // Only submit for email/app flows. Biometric uses its own button.
+    if (!showCodeInput) return;
+
+    if (selectedMethod !== "email") {
+      setBioError("TOTP not implemented yet (use Email or Biometric).");
+      return;
+    }
+
+    if (!mfaToken) {
+      setBioError("Missing MFA token. Please go back and sign in again.");
+      return;
+    }
+
+    const code = otpCode.trim();
+    if (code.length !== 6) {
+      setBioError("Enter the 6-digit code.");
+      return;
+    }
+
+    setSubmitLoading(true);
+    setBioError(null);
+
+    try {
+      const res = await fetch("/api/mfa/email/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mfaToken, code }),
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setBioError(data?.message ?? "OTP verification failed.");
+        return;
+      }
+
+      router.replace(data.redirectTo ?? "/dashboard");
+      router.refresh();
+    } catch {
+      setBioError("MFA verification failed. Try again.");
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
@@ -198,11 +258,7 @@ export function MfaForm() {
         )}
       </CardHeader>
 
-      <form action={dispatch}>
-        {/* Hidden fields for server action */}
-        <input type="hidden" name="mfaToken" value={mfaToken} />
-        <input type="hidden" name="mfaMethod" value={selectedMethod} />
-
+      <form onSubmit={verifyEmailCode}>
         <CardContent className="space-y-6">
           {/* Method selector */}
           <div className="space-y-3">
@@ -342,6 +398,8 @@ export function MfaForm() {
                   autoComplete="one-time-code"
                   maxLength={6}
                   required={showCodeInput}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
                   Enter the 6-digit code from your{" "}
@@ -361,11 +419,11 @@ export function MfaForm() {
           )}
 
           {/* Errors */}
-          {(bioError || state?.error) && (
+          {bioError && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Verification Failed</AlertTitle>
-              <AlertDescription>{bioError ?? state?.error}</AlertDescription>
+              <AlertDescription>{bioError}</AlertDescription>
             </Alert>
           )}
 
@@ -383,7 +441,10 @@ export function MfaForm() {
         <CardFooter className="flex flex-col gap-3">
           {/* Only submit for code-based methods */}
           {showCodeInput ? (
-            <VerifyButton disabled={selectedMethod === "app"} />
+            <VerifyButton
+              disabled={selectedMethod === "app"}
+              loading={submitLoading}
+            />
           ) : (
             <div className="w-full text-center py-2 text-sm text-muted-foreground">
               Click the button above to verify with biometric authentication.

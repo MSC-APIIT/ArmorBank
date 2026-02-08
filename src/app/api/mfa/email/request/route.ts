@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
     // Send email with Nodemailer
     await transporter.sendMail({
-      from: `"Your App Name" <${env.GMAIL_USER}>`,
+      from: `"Bank-Auth - AuthArmor" <${env.GMAIL_USER}>`,
       to: user.email,
       subject: "Your verification code",
       html: `
