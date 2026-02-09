@@ -51,24 +51,63 @@ npm install
 Create a file named **`.env.local`** in the project root.
 
 ```env
+# ================================
+# Environment
+# ================================
+ENVIRONMENT=development
+
+
+# ================================
 # MongoDB
+# ================================
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/<db>?retryWrites=true&w=majority
 MONGODB_DB=bank_auth
 
-# Session & Token Secrets
-SESSION_SECRET=replace-with-long-random-secret
-JWT_ACCESS_SECRET=replace-with-strong-secret
-JWT_REFRESH_SECRET=replace-with-strong-secret
+
+# ================================
+# Session & JWT Secrets
+# ================================
+SESSION_SECRET=<replace-with-long-random-secret>
+
+JWT_ACCESS_SECRET=<replace-with-strong-secret>
+JWT_REFRESH_SECRET=<replace-with-strong-secret>
 
 ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_SECONDS=604800
 
-# Email OTP (Gmail SMTP)
-GMAIL_USER=yourgmail@gmail.com
-GMAIL_APP_PASSWORD=your_gmail_app_password
 
+# ================================
+# Redis (Upstash)
+# ================================
+UPSTASH_REDIS_REST_URL=<your_upstash_redis_rest_url>
+UPSTASH_REDIS_REST_TOKEN=<your_upstash_redis_rest_token>
+
+
+# ================================
 # Cookie Settings
-COOKIE_SECURE=true
+# ================================
+COOKIE_SECURE=false
+
+
+# ================================
+# Email OTP (Nodemailer - Gmail SMTP)
+# ================================
+GMAIL_USER=<your_gmail_address>
+GMAIL_APP_PASSWORD=<your_gmail_app_password>
+
+
+# ================================
+# MFA / TOTP (Speakeasy)
+# ================================
+TOTP_ISSUER=<your_totp_issuer_name>
+MFA_ENC_KEY=<replace-with-32+char-encryption-key>
+
+
+# ================================
+# Security / Fallback
+# ================================
+DUMMY_BCRYPT_HASH=<a_valid_bcrypt_hash_60_chars_min>
+
 ```
 
 ### 4) Run in development mode
