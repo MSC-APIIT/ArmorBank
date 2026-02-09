@@ -36,8 +36,8 @@ The following must be installed on the system:
 ### 1) Clone the repository
 
 ```bash
-git clone <YOUR_REPO_URL>
-cd <YOUR_PROJECT_FOLDER>
+git clone https://github.com/MSC-APIIT/ArmorBank.git
+cd ArmorBank
 ```
 
 ### 2) Install dependencies
