@@ -196,13 +196,7 @@ export function MfaForm() {
   const verifyEmailCode = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Only submit for email/app flows. Biometric uses its own button.
     if (!showCodeInput) return;
-
-    if (selectedMethod !== "email") {
-      setBioError("TOTP not implemented yet (use Email or Biometric).");
-      return;
-    }
 
     if (!mfaToken) {
       setBioError("Missing MFA token. Please go back and sign in again.");
@@ -219,7 +213,17 @@ export function MfaForm() {
     setBioError(null);
 
     try {
-      const res = await fetch("/api/mfa/email/verify", {
+      let endpoint = "";
+
+      if (selectedMethod === "email") {
+        endpoint = "/api/mfa/email/verify";
+      } else if (selectedMethod === "app") {
+        endpoint = "/api/mfa/totp/verify";
+      } else {
+        return;
+      }
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mfaToken, code }),
@@ -230,7 +234,7 @@ export function MfaForm() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setBioError(data?.message ?? "OTP verification failed.");
+        setBioError(data?.message ?? "Verification failed.");
         return;
       }
 
@@ -306,9 +310,9 @@ export function MfaForm() {
               </Label>
 
               {/* Authenticator App Option */}
-              <Label className="relative flex flex-col gap-3 rounded-lg border-2 p-5 cursor-not-allowed opacity-60 transition-all">
+              <Label className="relative flex flex-col gap-3 rounded-lg border-2 p-5 cursor-pointer hover:bg-accent/50 has-[input:checked]:border-primary has-[input:checked]:bg-accent transition-all group">
                 <div className="flex items-center gap-3">
-                  <RadioGroupItem value="app" disabled className="mt-0.5" />
+                  <RadioGroupItem value="app" className="mt-0.5" />
                   <Smartphone className="h-6 w-6" />
                 </div>
                 <div className="space-y-1 pl-9">

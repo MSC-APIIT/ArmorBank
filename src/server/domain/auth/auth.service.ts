@@ -219,7 +219,20 @@ export async function loginWithPassword(
     };
   }
 
-  if (risk.score >= env.MFA_REQUIRED_THRESHOLD) {
+  const roles = user.roles ?? ["customer"];
+  const roleNorm = String(roles[0] ?? "").toLowerCase();
+  const isFirstLogin = !user.lastLoginAt;
+
+  const mfaRoles = (env.MFA_ROLES ?? "")
+    .split(",")
+    .map((r) => r.trim().toLowerCase())
+    .filter(Boolean);
+
+  const shouldRequireMfa =
+    mfaRoles.includes(roleNorm) &&
+    (isFirstLogin || risk.score >= env.MFA_REQUIRED_THRESHOLD);
+
+  if (shouldRequireMfa) {
     // Create MFA token (short TTL) for step-up
     const mfaToken = randomToken(24);
     await mfaChallenges.insertOne({
