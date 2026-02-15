@@ -6,6 +6,7 @@ import { headers, cookies } from "next/headers";
 import { getDb } from "@/server/db/mongo";
 import { createSession } from "@/lib/session";
 import { decryptSecret } from "@/server/security/secretVault";
+import { env } from "@/server/config/env";
 
 function sha256(input: string) {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -39,6 +40,31 @@ export async function POST(req: Request) {
     const sessions = db.collection("sessions");
     const devices = db.collection("devices");
 
+    const authAttempts = db.collection("auth_attempts");
+    const accountLocks = db.collection("account_locks");
+
+    // First decode token hash to find challenge (without filtering status)
+    const challengeRaw = await mfaChallenges.findOne<any>({
+      mfaTokenHash: sha256(mfaToken),
+    });
+
+    if (challengeRaw) {
+      const activeLock = await accountLocks.findOne({
+        userId: String(challengeRaw.userId),
+        lockedUntil: { $gt: new Date() },
+      });
+
+      if (activeLock) {
+        return NextResponse.json(
+          {
+            message:
+              "Your account is temporarily locked due to multiple failed verification attempts.",
+          },
+          { status: 423 },
+        );
+      }
+    }
+
     const challenge = await mfaChallenges.findOne<any>({
       mfaTokenHash: sha256(mfaToken),
       status: "pending",
@@ -47,7 +73,7 @@ export async function POST(req: Request) {
 
     if (!challenge) {
       return NextResponse.json(
-        { message: "Invalid or expired MFA token" },
+        { message: "Invalid or expired MFA token. Please sign in again." },
         { status: 401 },
       );
     }
@@ -94,6 +120,66 @@ export async function POST(req: Request) {
     });
 
     if (!ok) {
+      const now = new Date();
+
+      // NEW: record MFA failure
+      await authAttempts.insertOne({
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
+        emailOrUsername: null,
+        userId: challenge.userId,
+        deviceId,
+        ip,
+        userAgentHash: sha256(h.get("user-agent") || "unknown"),
+        result: "mfa_fail",
+        failReason: "invalid_totp",
+        riskScore: challenge.riskScore ?? null,
+        triggeredRules: challenge.triggeredRules ?? [],
+      });
+
+      // lock if failures reached limit in window
+      const windowAgo = new Date(
+        now.getTime() - env.MFA_FAIL_WINDOW_SECONDS * 1000,
+      );
+
+      const failCount = await authAttempts.countDocuments({
+        userId: challenge.userId,
+        createdAt: { $gte: windowAgo },
+        result: "mfa_fail",
+      });
+
+      if (failCount >= env.MFA_FAIL_LIMIT) {
+        const lockedUntil = new Date(
+          now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+        );
+
+        await accountLocks.updateOne(
+          { userId: String(challenge.userId) },
+          {
+            $set: {
+              userId: String(challenge.userId),
+              lockedUntil,
+              reason: "mfa_failures_totp",
+              riskScore: challenge.riskScore ?? null,
+              triggeredRules: ["totp_mfa_failed_limit_reached"],
+              updatedAt: now,
+            },
+            $setOnInsert: { createdAt: now },
+          },
+          { upsert: true },
+        );
+
+        await mfaChallenges.updateOne(
+          { _id: challenge._id },
+          { $set: { status: "failed", failedAt: now } },
+        );
+
+        return NextResponse.json(
+          { message: "Account locked due to suspicious activity." },
+          { status: 423 },
+        );
+      }
+
       return NextResponse.json({ message: "Invalid code" }, { status: 401 });
     }
 

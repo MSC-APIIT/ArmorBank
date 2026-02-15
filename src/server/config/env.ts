@@ -23,6 +23,17 @@ const EnvSchema = z.object({
 
   TOTP_ISSUER: z.string().min(1).default("Bank-Auth AuthArmor"),
   MFA_ENC_KEY: z.string().min(32),
+
+  LOCATION_RESTRICTED_ROLES: z.string().optional().default("admin,staff"),
+  MFA_ROLES: z.string().optional().default("customer"),
+
+  HIGH_RISK_THRESHOLD: z.coerce.number().default(70),
+  MFA_REQUIRED_THRESHOLD: z.coerce.number().default(30),
+
+  MFA_FAIL_WINDOW_SECONDS: z.coerce.number().default(600),
+  MFA_FAIL_LIMIT: z.coerce.number().default(3),
+
+  ACCOUNT_LOCK_SECONDS: z.coerce.number().default(60 * 60 * 24),
 });
 
 export const env = EnvSchema.parse(process.env);

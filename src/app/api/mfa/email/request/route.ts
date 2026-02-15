@@ -44,7 +44,7 @@ export async function POST(req: Request) {
 
     if (!challenge) {
       return NextResponse.json(
-        { message: "Invalid or expired MFA token" },
+        { message: "Invalid or expired MFA token. Please sign in again." },
         { status: 401 },
       );
     }

@@ -26,7 +26,37 @@ export type LoginState =
 const LoginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email." }),
   password: z.string().min(1, { message: "Password is required." }),
+  lat: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.trim() ? v.trim() : undefined)),
+  lng: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.trim() ? v.trim() : undefined)),
 });
+
+function haversineMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+) {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const s =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+function normalizeRole(role: any): string {
+  return String(role ?? "").toLowerCase();
+}
 
 async function getBaseUrl() {
   const h = await headers();
@@ -101,10 +131,30 @@ export async function login(_: any, formData: FormData) {
       ip,
       deviceId,
       userAgent,
-      roles: "customer",
     });
 
     if (result.type === "MFA_REQUIRED") {
+      const mfaRoles = (process.env.MFA_ROLES ?? "")
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const roleFromResult =
+        Array.isArray((result as any).roles) && (result as any).roles.length > 0
+          ? (result as any).roles[0]
+          : "customer";
+
+      const roleNorm = normalizeRole(roleFromResult);
+
+      // ✅ if role not in MFA_ROLES, block MFA flow and ask to login again (or treat as success if your service supports it)
+      if (!mfaRoles.includes(roleNorm)) {
+        return {
+          status: "error",
+          error: "MFA is not enabled for this account. Please contact support.",
+          timestamp: Date.now(),
+        } satisfies LoginState;
+      }
+
       const db = await getDb();
       const mfaChallenges = db.collection("mfa_challenges");
       const webauthnCreds = db.collection("webauthn_credentials");
@@ -165,6 +215,80 @@ export async function login(_: any, formData: FormData) {
       Array.isArray(result.roles) && result.roles.length > 0
         ? result.roles[0]
         : "customer";
+
+    const roleNorm = normalizeRole(userRole);
+
+    const restrictedRoles = (process.env.LOCATION_RESTRICTED_ROLES ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    const mustCheckLocation = restrictedRoles.includes(roleNorm);
+    if (mustCheckLocation) {
+      const latStr = (parsed.data as any).lat;
+      const lngStr = (parsed.data as any).lng;
+
+      if (!latStr || !lngStr) {
+        return {
+          status: "error",
+          error: "Location access is required for this account.",
+          timestamp: Date.now(),
+        } satisfies LoginState;
+      }
+
+      const lat = Number(latStr);
+      const lng = Number(lngStr);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return {
+          status: "error",
+          error: "Invalid location data. Please try again.",
+          timestamp: Date.now(),
+        } satisfies LoginState;
+      }
+
+      const db = await getDb();
+      const policies = db.collection("role_access_policies");
+
+      const policy = await policies.findOne<any>({
+        userId: result.userId,
+        enabled: true,
+      });
+
+      const allowedGeo = Array.isArray(policy?.allowedGeo)
+        ? policy.allowedGeo
+        : [];
+
+      if (allowedGeo.length === 0) {
+        return {
+          status: "error",
+          error: "Login blocked. Location policy not configured.",
+          timestamp: Date.now(),
+        } satisfies LoginState;
+      }
+
+      const current = { lat, lng };
+
+      const ok = allowedGeo.some((g: any) => {
+        const center = { lat: Number(g.lat), lng: Number(g.lng) };
+        const radius = Number(g.radiusMeters);
+        if (
+          !Number.isFinite(center.lat) ||
+          !Number.isFinite(center.lng) ||
+          !Number.isFinite(radius)
+        )
+          return false;
+        const d = haversineMeters(center, current);
+        return d <= radius;
+      });
+
+      if (!ok) {
+        return {
+          status: "error",
+          error: "Login failed. You are not in the allowed location.",
+          timestamp: Date.now(),
+        } satisfies LoginState;
+      }
+    }
 
     await createSession(result.userId, userRole, result.userName, false, {
       hasPasskey: hasPasskey,

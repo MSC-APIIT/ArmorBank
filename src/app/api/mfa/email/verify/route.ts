@@ -3,6 +3,7 @@ import { headers, cookies } from "next/headers";
 import crypto from "crypto";
 import { getDb } from "@/server/db/mongo";
 import { createSession } from "@/lib/session";
+import { env } from "@/server/config/env";
 
 function sha256(input: string) {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -32,6 +33,9 @@ export async function POST(req: Request) {
     const sessions = db.collection("sessions");
     const devices = db.collection("devices");
 
+    const authAttempts = db.collection("auth_attempts");
+    const accountLocks = db.collection("account_locks");
+
     // Find challenge
     const challenge = await mfaChallenges.findOne<any>({
       mfaTokenHash: sha256(mfaToken),
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
 
     if (!challenge) {
       return NextResponse.json(
-        { message: "Invalid or expired MFA token" },
+        { message: "Invalid or expired MFA token. Please sign in again." },
         { status: 401 },
       );
     }
@@ -51,6 +55,20 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { message: "Token context mismatch" },
         { status: 401 },
+      );
+    }
+
+    // account lock check (block even before counting attempts)
+    const nowLockCheck = new Date();
+    const activeLock = await accountLocks.findOne({
+      userId: String(challenge.userId),
+      lockedUntil: { $gt: nowLockCheck },
+    });
+
+    if (activeLock) {
+      return NextResponse.json(
+        { message: "Account is locked. Try again later." },
+        { status: 423 },
       );
     }
 
@@ -72,13 +90,35 @@ export async function POST(req: Request) {
     // Check attempts (max 3)
     const attempts = challenge.emailOtpAttempts || 0;
     if (attempts >= 3) {
+      const now = new Date();
+      const lockedUntil = new Date(
+        now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+      );
+
+      await accountLocks.updateOne(
+        { userId: String(challenge.userId) },
+        {
+          $set: {
+            userId: String(challenge.userId),
+            lockedUntil,
+            reason: "mfa_failures_email",
+            riskScore: challenge.riskScore ?? null,
+            triggeredRules: ["email_mfa_failed_too_many_times"],
+            updatedAt: now,
+          },
+          $setOnInsert: { createdAt: now },
+        },
+        { upsert: true },
+      );
+
       await mfaChallenges.updateOne(
         { _id: challenge._id },
-        { $set: { status: "failed", failedAt: new Date() } },
+        { $set: { status: "failed", failedAt: now } },
       );
+
       return NextResponse.json(
-        { message: "Too many failed attempts. Please login again." },
-        { status: 429 },
+        { message: "Account locked due to suspicious activity." },
+        { status: 423 },
       );
     }
 
@@ -86,11 +126,71 @@ export async function POST(req: Request) {
     const codeHash = sha256(code.trim());
 
     if (codeHash !== challenge.emailOtpHash) {
+      const now = new Date();
+
+      // ✅ NEW: store MFA failure in auth_attempts
+      await authAttempts.insertOne({
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
+        emailOrUsername: null,
+        userId: challenge.userId,
+        deviceId,
+        ip,
+        userAgentHash: sha256(h.get("user-agent") || "unknown"),
+        result: "mfa_fail",
+        failReason: "invalid_email_otp",
+        riskScore: challenge.riskScore ?? null,
+        triggeredRules: challenge.triggeredRules ?? [],
+      });
+
       // Increment attempts
       await mfaChallenges.updateOne(
         { _id: challenge._id },
         { $inc: { emailOtpAttempts: 1 } },
       );
+
+      // if failures reached limit in window, lock account
+      const windowAgo = new Date(
+        now.getTime() - env.MFA_FAIL_WINDOW_SECONDS * 1000,
+      );
+
+      const failCount = await authAttempts.countDocuments({
+        userId: challenge.userId,
+        createdAt: { $gte: windowAgo },
+        result: "mfa_fail",
+      });
+
+      if (failCount >= env.MFA_FAIL_LIMIT) {
+        const lockedUntil = new Date(
+          now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+        );
+
+        await accountLocks.updateOne(
+          { userId: String(challenge.userId) },
+          {
+            $set: {
+              userId: String(challenge.userId),
+              lockedUntil,
+              reason: "mfa_failures_email",
+              riskScore: challenge.riskScore ?? null,
+              triggeredRules: ["email_mfa_failed_limit_reached"],
+              updatedAt: now,
+            },
+            $setOnInsert: { createdAt: now },
+          },
+          { upsert: true },
+        );
+
+        await mfaChallenges.updateOne(
+          { _id: challenge._id },
+          { $set: { status: "failed", failedAt: now } },
+        );
+
+        return NextResponse.json(
+          { message: "Account locked due to suspicious activity." },
+          { status: 423 },
+        );
+      }
 
       return NextResponse.json(
         { message: `Invalid code. ${2 - attempts} attempts remaining.` },

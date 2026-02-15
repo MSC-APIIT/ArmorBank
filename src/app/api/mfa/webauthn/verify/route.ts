@@ -60,6 +60,10 @@ export async function POST(req: Request) {
   const users = db.collection("users");
   const sessions = db.collection("sessions");
 
+  // attempts + account locks collections
+  const authAttempts = db.collection("auth_attempts");
+  const accountLocks = db.collection("account_locks");
+
   const challengeDoc = await mfaChallenges.findOne<any>({
     mfaTokenHash: sha256(mfaToken),
     status: "pending",
@@ -77,6 +81,19 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { message: "Token context mismatch" },
       { status: 401 },
+    );
+  }
+
+  // block if account already locked
+  const nowLockCheck = new Date();
+  const activeLock = await accountLocks.findOne({
+    userId: String(challengeDoc.userId),
+    lockedUntil: { $gt: nowLockCheck },
+  });
+  if (activeLock) {
+    return NextResponse.json(
+      { message: "Account is locked. Try again later." },
+      { status: 423 },
     );
   }
 
@@ -110,6 +127,64 @@ export async function POST(req: Request) {
   });
 
   if (!cred) {
+    // record fail + lock check
+    const now = new Date();
+
+    await authAttempts.insertOne({
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
+      emailOrUsername: null,
+      userId: challengeDoc.userId,
+      deviceId,
+      ip,
+      userAgentHash: sha256(h.get("user-agent") || "unknown"),
+      result: "mfa_fail",
+      failReason: "unknown_passkey_credential",
+      riskScore: challengeDoc.riskScore ?? null,
+      triggeredRules: challengeDoc.triggeredRules ?? [],
+    });
+
+    const windowAgo = new Date(
+      now.getTime() - env.MFA_FAIL_WINDOW_SECONDS * 1000,
+    );
+    const failCount = await authAttempts.countDocuments({
+      userId: challengeDoc.userId,
+      createdAt: { $gte: windowAgo },
+      result: "mfa_fail",
+    });
+
+    if (failCount >= env.MFA_FAIL_LIMIT) {
+      const lockedUntil = new Date(
+        now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+      );
+
+      await accountLocks.updateOne(
+        { userId: String(challengeDoc.userId) },
+        {
+          $set: {
+            userId: String(challengeDoc.userId),
+            lockedUntil,
+            reason: "mfa_failures_webauthn",
+            riskScore: challengeDoc.riskScore ?? null,
+            triggeredRules: ["webauthn_failed_limit_reached"],
+            updatedAt: now,
+          },
+          $setOnInsert: { createdAt: now },
+        },
+        { upsert: true },
+      );
+
+      await mfaChallenges.updateOne(
+        { _id: challengeDoc._id },
+        { $set: { status: "failed", failedAt: now } },
+      );
+
+      return NextResponse.json(
+        { message: "Account locked due to suspicious activity." },
+        { status: 423 },
+      );
+    }
+
     return NextResponse.json(
       { message: "Unknown credential" },
       { status: 401 },
@@ -130,6 +205,64 @@ export async function POST(req: Request) {
   } as any);
 
   if (!verification.verified) {
+    // record fail + lock check (same rules)
+    const now = new Date();
+
+    await authAttempts.insertOne({
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
+      emailOrUsername: null,
+      userId: challengeDoc.userId,
+      deviceId,
+      ip,
+      userAgentHash: sha256(h.get("user-agent") || "unknown"),
+      result: "mfa_fail",
+      failReason: "webauthn_verification_failed",
+      riskScore: challengeDoc.riskScore ?? null,
+      triggeredRules: challengeDoc.triggeredRules ?? [],
+    });
+
+    const windowAgo = new Date(
+      now.getTime() - env.MFA_FAIL_WINDOW_SECONDS * 1000,
+    );
+    const failCount = await authAttempts.countDocuments({
+      userId: challengeDoc.userId,
+      createdAt: { $gte: windowAgo },
+      result: "mfa_fail",
+    });
+
+    if (failCount >= env.MFA_FAIL_LIMIT) {
+      const lockedUntil = new Date(
+        now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+      );
+
+      await accountLocks.updateOne(
+        { userId: String(challengeDoc.userId) },
+        {
+          $set: {
+            userId: String(challengeDoc.userId),
+            lockedUntil,
+            reason: "mfa_failures_webauthn",
+            riskScore: challengeDoc.riskScore ?? null,
+            triggeredRules: ["webauthn_failed_limit_reached"],
+            updatedAt: now,
+          },
+          $setOnInsert: { createdAt: now },
+        },
+        { upsert: true },
+      );
+
+      await mfaChallenges.updateOne(
+        { _id: challengeDoc._id },
+        { $set: { status: "failed", failedAt: now } },
+      );
+
+      return NextResponse.json(
+        { message: "Account locked due to suspicious activity." },
+        { status: 423 },
+      );
+    }
+
     return NextResponse.json(
       { message: "WebAuthn verification failed" },
       { status: 401 },

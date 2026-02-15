@@ -72,6 +72,37 @@ export async function loginWithPassword(
 
   const now = new Date();
 
+  const locks = db.collection("account_locks");
+
+  if (user?._id) {
+    const lock = await locks.findOne({
+      userId: String(user._id),
+      lockedUntil: { $gt: now },
+    });
+
+    if (lock) {
+      await attempts.insertOne({
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
+        emailOrUsername: email,
+        userId: user._id,
+        deviceId: input.deviceId,
+        ip: input.ip,
+        userAgentHash: sha256(input.userAgent),
+        result: "blocked",
+        failReason: "account_locked",
+        riskScore: lock.riskScore ?? null,
+        triggeredRules: lock.triggeredRules ?? ["account_locked"],
+      });
+
+      return {
+        type: "BLOCKED",
+        riskScore: lock.riskScore ?? 100,
+        triggeredRules: ["account_locked"],
+      };
+    }
+  }
+
   // Track device
   const existingDevice = await devices.findOne<any>({
     deviceId: input.deviceId,
@@ -88,7 +119,7 @@ export async function loginWithPassword(
       { emailOrUsername: email },
     ],
     createdAt: { $gte: tenMinAgo },
-    result: { $in: ["fail", "blocked"] },
+    result: { $in: ["fail", "blocked", "mfa_fail"] },
   });
 
   const geoChanged = false;
@@ -113,7 +144,7 @@ export async function loginWithPassword(
     currentIp: input.ip,
   });
 
-  console.log("🎯 Risk Score:", risk);
+  console.log("Risk Score:", risk);
 
   // If bad password => record fail and return generic error upstream (caller decides message)
   if (!user || !passwordOk) {
@@ -132,7 +163,7 @@ export async function loginWithPassword(
     });
 
     // Even if credentials wrong, don’t reveal anything. Return BLOCKED only if very high risk.
-    if (risk.score >= 70) {
+    if (risk.score >= env.HIGH_RISK_THRESHOLD) {
       return {
         type: "BLOCKED",
         riskScore: risk.score,
@@ -145,7 +176,28 @@ export async function loginWithPassword(
   }
 
   // Credentials OK: apply decision gates
-  if (risk.score >= 70) {
+  if (risk.score >= env.HIGH_RISK_THRESHOLD) {
+    const lockedUntil = new Date(
+      now.getTime() + env.ACCOUNT_LOCK_SECONDS * 1000,
+    );
+
+    await db.collection("account_locks").updateOne(
+      { userId: String(user._id) },
+      {
+        $set: {
+          userId: String(user._id),
+          email,
+          lockedUntil,
+          reason: "high_risk",
+          riskScore: risk.score,
+          triggeredRules: risk.triggeredRules,
+          updatedAt: now,
+        },
+        $setOnInsert: { createdAt: now },
+      },
+      { upsert: true },
+    );
+
     await attempts.insertOne({
       createdAt: now,
       expiresAt: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 14),
@@ -159,7 +211,7 @@ export async function loginWithPassword(
       riskScore: risk.score,
       triggeredRules: risk.triggeredRules,
     });
-    console.log("🚫 Login BLOCKED - High risk:", risk.score);
+
     return {
       type: "BLOCKED",
       riskScore: risk.score,
@@ -167,7 +219,7 @@ export async function loginWithPassword(
     };
   }
 
-  if (risk.score >= 30) {
+  if (risk.score >= env.MFA_REQUIRED_THRESHOLD) {
     // Create MFA token (short TTL) for step-up
     const mfaToken = randomToken(24);
     await mfaChallenges.insertOne({
@@ -194,7 +246,7 @@ export async function loginWithPassword(
       riskScore: risk.score,
       triggeredRules: risk.triggeredRules,
     });
-    console.log("🔐 MFA REQUIRED - Medium risk:", risk.score);
+    console.log("MFA REQUIRED - Medium risk:", risk.score);
     return {
       type: "MFA_REQUIRED",
       mfaToken,
@@ -292,7 +344,7 @@ export async function loginWithPassword(
       },
     );
   }
-  console.log("✅ Login ALLOWED - Low risk:", risk.score);
+  console.log("Login ALLOWED - Low risk:", risk.score);
 
   const accessToken = await signAccessToken({
     sub: String(user._id),

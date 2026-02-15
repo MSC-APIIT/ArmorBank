@@ -142,6 +142,17 @@ export function MfaForm() {
       router.replace(verifyData.redirectTo ?? "/dashboard");
       router.refresh();
     } catch (e: any) {
+      // report biometric failure to server
+      try {
+        await fetch("/api/mfa/webauthn/fail", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mfaToken }),
+          credentials: "include",
+          cache: "no-store",
+        });
+      } catch {}
+
       setBioError(e?.message ?? "Biometric failed. Try Email Code.");
     } finally {
       setBioLoading(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useActionState, useEffect } from "react";
+import React, { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { login, type LoginState } from "@/lib/actions";
@@ -36,6 +36,28 @@ export function LoginForm() {
     initialState,
   );
 
+  const [geo, setGeo] = useState<{ lat: string; lng: string } | null>(null);
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo({
+          lat: String(pos.coords.latitude),
+          lng: String(pos.coords.longitude),
+        });
+      },
+      () => {
+        setGeo(null);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 60_000,
+      },
+    );
+  }, []);
+
   useEffect(() => {
     if (state.status === "mfa") {
       router.replace(
@@ -60,6 +82,9 @@ export function LoginForm() {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          <input type="hidden" name="lat" value={geo?.lat ?? ""} />
+          <input type="hidden" name="lng" value={geo?.lng ?? ""} />
+
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
