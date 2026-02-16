@@ -3,13 +3,10 @@ import { headers } from "next/headers";
 import crypto from "crypto";
 import { getDb } from "@/server/db/mongo";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
+import { getWebAuthnConfig } from "@/lib/webauthn-config";
 
 function sha256(input: string) {
   return crypto.createHash("sha256").update(input).digest("hex");
-}
-
-function getRpID(host: string) {
-  return host.split(":")[0];
 }
 
 function toUserIDBuffer(userId: string) {
@@ -36,16 +33,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Missing userId" }, { status: 400 });
   }
 
-  const h = await headers();
-  const host = h.get("host") ?? "localhost";
-  const rpID = getRpID(host);
+  const { rpID } = getWebAuthnConfig();
 
   const db = await getDb();
   const webauthnCreds = db.collection("webauthn_credentials");
   const mfaChallenges = db.collection("mfa_challenges");
 
   // Exclude already-registered credentials
-  const creds = await webauthnCreds.find({ userId }).toArray();
+  const creds = await webauthnCreds
+    .find({ $or: [{ userId }, { userId: String(userId) }] })
+    .toArray();
 
   const options = await generateRegistrationOptions({
     rpName: "AuthArmor",
@@ -59,6 +56,7 @@ export async function POST(req: Request) {
     },
     excludeCredentials: creds.map((c: any) => ({
       id: toCredentialIDBase64Url(c.credentialId),
+      type: "public-key",
       transports: c.transports ?? undefined,
     })),
   });

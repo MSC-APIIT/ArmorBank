@@ -33,6 +33,16 @@ export default async function middleware(request: NextRequest) {
   // Allow /mfa without a session (MFA token in URL is enough)
   if (pathname.startsWith("/mfa")) {
     const token = request.nextUrl.searchParams.get("token");
+
+    // If fully authenticated session exists, go straight to dashboard
+    const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const session = cookie ? decodeSession(cookie) : null;
+    if (session && isSessionTokenValid(session) && !session.isMfaPending) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/dashboard/${session.user.role}`;
+      return NextResponse.redirect(url);
+    }
+
     if (!token) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";

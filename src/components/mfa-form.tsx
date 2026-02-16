@@ -456,10 +456,7 @@ export function MfaForm() {
         <CardFooter className="flex flex-col gap-3">
           {/* Only submit for code-based methods */}
           {showCodeInput ? (
-            <VerifyButton
-              disabled={selectedMethod === "app"}
-              loading={submitLoading}
-            />
+            <VerifyButton disabled={false} loading={submitLoading} />
           ) : (
             <div className="w-full text-center py-2 text-sm text-muted-foreground">
               Click the button above to verify with biometric authentication.

@@ -108,7 +108,12 @@ export async function loginWithPassword(
     deviceId: input.deviceId,
   });
   const isNewDevice = !existingDevice;
-  const isNewIp = !existingDevice || existingDevice.lastSeenIp !== input.ip;
+
+  // If device is new, don't double-penalise with NEW_IP too
+  // If device exists, only flag IP change for untrusted devices
+  const isNewIp = existingDevice
+    ? existingDevice.lastSeenIp !== input.ip
+    : false;
 
   // Compute recent failures (update query to be more comprehensive)
   const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000);
@@ -259,6 +264,11 @@ export async function loginWithPassword(
       riskScore: risk.score,
       triggeredRules: risk.triggeredRules,
     });
+    await users.updateOne(
+      { _id: user._id },
+      { $set: { lastLoginAt: now, lastLoginIp: input.ip, updatedAt: now } },
+    );
+
     console.log("MFA REQUIRED - Medium risk:", risk.score);
     return {
       type: "MFA_REQUIRED",

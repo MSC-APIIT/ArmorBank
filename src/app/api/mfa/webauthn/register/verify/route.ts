@@ -4,25 +4,9 @@ import { getDb } from "@/server/db/mongo";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/types";
 import { getSession, updateSession } from "@/lib/session";
-
-function getRpID(host: string) {
-  return host.split(":")[0];
-}
-
-function getOrigin(h: Headers) {
-  const host = h.get("host") ?? "localhost";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
+import { getWebAuthnConfig } from "@/lib/webauthn-config";
 
 export async function POST(req: Request) {
-  const session = await getSession();
-  if (session) {
-    session.hasPasskey = true;
-    session.shouldPromptPasskey = false;
-    await updateSession(session);
-  }
-
   const { userId, registrationResponse } = (await req.json()) as {
     userId: string;
     registrationResponse: RegistrationResponseJSON;
@@ -36,9 +20,7 @@ export async function POST(req: Request) {
   }
 
   const h = await headers();
-  const host = h.get("host") ?? "localhost";
-  const rpID = getRpID(host);
-  const expectedOrigin = getOrigin(h);
+  const { rpID, expectedOrigin } = getWebAuthnConfig();
 
   const db = await getDb();
   const mfaChallenges = db.collection("mfa_challenges");
@@ -79,6 +61,13 @@ export async function POST(req: Request) {
     );
   }
 
+  const session = await getSession();
+  if (session) {
+    session.hasPasskey = true;
+    session.shouldPromptPasskey = false;
+    await updateSession(session);
+  }
+
   const regInfo: any = verification.registrationInfo;
 
   // v10+ => regInfo.credential.id / regInfo.credential.publicKey
@@ -100,21 +89,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // IMPORTANT: store Buffer so your existing allowCredentials works (it uses c.credentialId directly)
-  const credentialIdBuf = Buffer.from(credentialID);
-  const publicKeyBuf = Buffer.from(credentialPublicKey);
+  const credentialIdB64 = registrationResponse.rawId;
+  const publicKeyB64 = Buffer.from(credentialPublicKey).toString("base64url");
 
-  // Prevent duplicate insert
   const exists = await webauthnCreds.findOne({
     userId,
-    credentialId: credentialIdBuf,
+    credentialId: credentialIdB64,
   });
 
   if (!exists) {
     await webauthnCreds.insertOne({
       userId,
-      credentialId: credentialIdBuf,
-      publicKey: publicKeyBuf,
+      credentialId: credentialIdB64,
+      publicKey: publicKeyB64,
       counter,
       transports: registrationResponse.response.transports ?? [],
       deviceType: credentialDeviceType,

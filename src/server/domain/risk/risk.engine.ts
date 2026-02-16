@@ -25,12 +25,12 @@ export function evaluateLoginRisk(ctx: RiskContext): RiskResult {
   const triggeredRules: string[] = [];
 
   if (ctx.isNewDevice) {
-    score += 20;
+    score += 30;
     triggeredRules.push("NEW_DEVICE");
   }
 
   if (ctx.isNewIp) {
-    score += 15;
+    score += 30;
     triggeredRules.push("NEW_IP");
   }
 

@@ -34,6 +34,9 @@ const EnvSchema = z.object({
   MFA_FAIL_LIMIT: z.coerce.number().default(3),
 
   ACCOUNT_LOCK_SECONDS: z.coerce.number().default(60 * 60 * 24),
+
+  NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  APP_URL: z.string().url().optional(),
 });
 
 export const env = EnvSchema.parse(process.env);

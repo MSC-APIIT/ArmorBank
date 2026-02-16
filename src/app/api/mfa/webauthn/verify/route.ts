@@ -7,6 +7,7 @@ import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/types";
 import { createSession } from "@/lib/session";
 import { SignJWT } from "jose";
+import { getWebAuthnConfig } from "@/lib/webauthn-config";
 
 function sha256(input: string) {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -23,21 +24,11 @@ async function signAccessToken(payload: Record<string, any>) {
     .sign(secret);
 }
 
-function getRpID(host: string) {
-  return host.split(":")[0];
-}
-
 function toBuffer(v: any): Buffer {
   if (Buffer.isBuffer(v)) return v;
   if (typeof v === "string") return Buffer.from(v, "base64url");
   if (v?.buffer) return Buffer.from(v.buffer);
   throw new Error("Invalid buffer field");
-}
-
-function getExpectedOrigin(h: Headers) {
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("host") ?? "localhost";
-  return `${proto}://${host}`;
 }
 
 export async function POST(req: Request) {
@@ -77,13 +68,6 @@ export async function POST(req: Request) {
     );
   }
 
-  if (challengeDoc.ip !== ip || challengeDoc.deviceId !== deviceId) {
-    return NextResponse.json(
-      { message: "Token context mismatch" },
-      { status: 401 },
-    );
-  }
-
   // block if account already locked
   const nowLockCheck = new Date();
   const activeLock = await accountLocks.findOne({
@@ -104,25 +88,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const host = h.get("host") ?? "localhost";
-  const rpID = getRpID(host);
-  const expectedOrigin = getExpectedOrigin(h);
-
-  const credentialIdBuf = Buffer.from(response.rawId, "base64url");
-  const credentialIdStr = response.rawId;
+  const { rpID, expectedOrigin } = getWebAuthnConfig();
 
   const userIdObj = challengeDoc.userId;
   const userIdStr = String(challengeDoc.userId);
 
+  const credentialIdStr = response.rawId;
+
   const cred = await webauthnCreds.findOne<any>({
     $and: [
       { $or: [{ userId: userIdObj }, { userId: userIdStr }] },
-      {
-        $or: [
-          { credentialId: credentialIdBuf },
-          { credentialId: credentialIdStr },
-        ],
-      },
+      { credentialId: credentialIdStr },
     ],
   });
 
@@ -196,10 +172,11 @@ export async function POST(req: Request) {
     expectedChallenge: challengeDoc.webauthnChallenge,
     expectedOrigin,
     expectedRPID: rpID,
-    authenticator: {
-      credentialID: toBuffer(cred.credentialId),
-      credentialPublicKey: toBuffer(cred.publicKey),
+    credential: {
+      id: cred.credentialId,
+      publicKey: toBuffer(cred.publicKey),
       counter: cred.counter ?? 0,
+      transports: cred.transports ?? undefined,
     },
     requireUserVerification: true,
   } as any);
@@ -346,7 +323,7 @@ export async function POST(req: Request) {
     String(user._id),
     userRole,
     user.name || user.email,
-    true,
+    false,
   );
 
   return NextResponse.json({

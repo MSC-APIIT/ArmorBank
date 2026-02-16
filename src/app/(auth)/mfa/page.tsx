@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 export default async function MfaPage() {
   const session = await getSession();
 
-  // if (!session || !session.isMfaPending) {
-  //     redirect('/login');
-  // }
+  if (session && !session.isMfaPending) {
+    redirect(`/dashboard/${session.user.role ?? "customer"}`);
+  }
 
   return <MfaForm />;
 }

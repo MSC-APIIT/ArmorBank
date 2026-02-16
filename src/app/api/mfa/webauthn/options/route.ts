@@ -3,13 +3,10 @@ import { headers, cookies } from "next/headers";
 import crypto from "crypto";
 import { getDb } from "@/server/db/mongo";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
+import { getWebAuthnConfig } from "@/lib/webauthn-config";
 
 function sha256(input: string) {
   return crypto.createHash("sha256").update(input).digest("hex");
-}
-
-function getRpID(host: string) {
-  return host.split(":")[0];
 }
 
 function toCredentialIDBase64Url(id: any): string {
@@ -58,8 +55,7 @@ export async function POST(req: Request) {
   }
 
   const h = await headers();
-  const host = h.get("host") ?? "localhost";
-  const rpID = getRpID(host);
+  const { rpID } = getWebAuthnConfig();
 
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   const deviceId = (await cookies()).get("deviceId")?.value ?? "unknown";
@@ -77,14 +73,6 @@ export async function POST(req: Request) {
   if (!challengeDoc) {
     return NextResponse.json(
       { message: "Invalid/expired token" },
-      { status: 401 },
-    );
-  }
-
-  // Bind token to the environment that requested it (prevents token reuse from another device/ip)
-  if (challengeDoc.ip !== ip || challengeDoc.deviceId !== deviceId) {
-    return NextResponse.json(
-      { message: "Token context mismatch" },
       { status: 401 },
     );
   }
@@ -113,6 +101,7 @@ export async function POST(req: Request) {
     userVerification: "required",
     allowCredentials: creds.map((c: any) => ({
       id: toCredentialIDBase64Url(c.credentialId),
+      type: "public-key",
       transports: c.transports ?? undefined,
     })),
   });
